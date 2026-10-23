@@ -14,14 +14,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .env import NUM_ACTIONS
-
-
 class Encoder(nn.Module):
-    def __init__(self, latent_dim: int, ch: int = 32):
+    def __init__(self, latent_dim: int, ch: int = 32, in_ch: int = 1):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(1, ch, 4, 2, 1), nn.SiLU(),            # 32
+            nn.Conv2d(in_ch, ch, 4, 2, 1), nn.SiLU(),            # 32
             nn.Conv2d(ch, ch * 2, 4, 2, 1), nn.SiLU(),       # 16
             nn.Conv2d(ch * 2, ch * 4, 4, 2, 1), nn.SiLU(),   # 8
             nn.Conv2d(ch * 4, ch * 4, 4, 2, 1), nn.SiLU(),   # 4
@@ -34,7 +31,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, latent_dim: int, ch: int = 32):
+    def __init__(self, latent_dim: int, ch: int = 32, in_ch: int = 1):
         super().__init__()
         self.ch = ch
         self.fc = nn.Linear(latent_dim, ch * 4 * 16)
@@ -43,7 +40,7 @@ class Decoder(nn.Module):
             nn.ConvTranspose2d(ch * 4, ch * 4, 4, 2, 1), nn.SiLU(),  # 8
             nn.ConvTranspose2d(ch * 4, ch * 2, 4, 2, 1), nn.SiLU(),  # 16
             nn.ConvTranspose2d(ch * 2, ch, 4, 2, 1), nn.SiLU(),      # 32
-            nn.ConvTranspose2d(ch, 1, 4, 2, 1),                      # 64, logits
+            nn.ConvTranspose2d(ch, in_ch, 4, 2, 1),                  # 64, logits
         )
 
     def forward(self, z):
@@ -55,30 +52,31 @@ def mlp(inp, out, hidden=256):
 
 
 class WorldModelV0(nn.Module):
-    def __init__(self, latent_dim: int = 32, hidden_dim: int = 256, ch: int = 32):
+    def __init__(self, latent_dim: int = 32, hidden_dim: int = 256, ch: int = 32, in_ch: int = 1, num_actions: int = 3):
         super().__init__()
         self.latent_dim, self.hidden_dim = latent_dim, hidden_dim
-        self.encoder = Encoder(latent_dim, ch)
-        self.decoder = Decoder(latent_dim, ch)
-        self.gru = nn.GRUCell(latent_dim + NUM_ACTIONS, hidden_dim)
+        self.in_ch, self.num_actions = in_ch, num_actions
+        self.encoder = Encoder(latent_dim, ch, in_ch)
+        self.decoder = Decoder(latent_dim, ch, in_ch)
+        self.gru = nn.GRUCell(latent_dim + num_actions, hidden_dim)
         self.prior = mlp(hidden_dim, latent_dim)
         self.reward_head = mlp(hidden_dim, 3)    # classes: -1, 0, +1
         self.continue_head = mlp(hidden_dim, 1)  # logit of "episode continues"
 
     def encode(self, obs):
-        """obs: B,T,1,H,W -> B,T,D, each latent normalised to zero mean, unit variance."""
+        """obs: B,T,C,H,W -> B,T,D, each latent normalised to zero mean, unit variance."""
         B, T = obs.shape[:2]
         # Normalising keeps the latent's scale fixed: unbounded, the encoder inflates it and
         # the latent-matching loss explodes; squashed with tanh, it saturates and collapses.
         return F.layer_norm(self.encoder(obs.flatten(0, 1)), (self.latent_dim,)).view(B, T, -1)
 
     def decode(self, z):
-        """z: B,T,D -> logits B,T,1,H,W"""
+        """z: B,T,D -> logits B,T,C,H,W"""
         B, T = z.shape[:2]
-        return self.decoder(z.flatten(0, 1)).view(B, T, 1, 64, 64)
+        return self.decoder(z.flatten(0, 1)).view(B, T, self.in_ch, 64, 64)
 
     def step(self, h, z, action):
-        return self.gru(torch.cat([z, F.one_hot(action, NUM_ACTIONS).float()], -1), h)
+        return self.gru(torch.cat([z, F.one_hot(action, self.num_actions).float()], -1), h)
 
     def rollout(self, z_real, actions, context: int):
         """Run the dynamics over a sequence.
@@ -111,15 +109,20 @@ def class_to_reward(c):
     return c.float() - 1
 
 
-def recon_loss(logits, target, foreground_weight: float = 20.0):
-    """Bernoulli log-likelihood summed over pixels, with ball and paddle pixels upweighted.
+def recon_loss(logits, target, mask=None, foreground_weight: float = 20.0):
+    """Bernoulli log-likelihood summed over pixels, with small foreground objects upweighted.
 
     The ball covers ~20 of 4096 pixels. With an unweighted loss the autoencoder settles on
     "predict a black screen with a faint paddle" and never leaves that plateau (tested:
     no progress after 1200 steps). Upweighting foreground pixels breaks the plateau within
     ~500 steps. This is the "small objects get blurred away" pitfall from the primer.
+
+    mask (B,T,1,H,W) marks foreground pixels when the environment provides it (the game's
+    sprites); otherwise any non-black pixel counts as foreground (the ball game).
     """
-    weight = 1 + (foreground_weight - 1) * (target > 0.05).float()
+    if mask is None:
+        mask = (target.amax(-3, keepdim=True) > 0.05).float()
+    weight = 1 + (foreground_weight - 1) * mask
     nll = F.binary_cross_entropy_with_logits(logits, target, weight=weight, reduction="none")
     return nll.sum((-3, -2, -1)).mean()
 
@@ -136,10 +139,11 @@ def compute_loss(model: WorldModelV0, batch: dict, context: int, latent_weight: 
     z_pred, h = model.rollout(z, act, context)
 
     # 1. Autoencoder: every real frame reconstructs from its own latent.
-    loss_ae = recon_loss(model.decode(z), obs)
+    mask = batch.get("mask")
+    loss_ae = recon_loss(model.decode(z), obs, mask)
     # 2. Dynamics in pixel space: predicted latents must decode to the true next frames,
     #    both in the teacher-forced part and in the open-loop part.
-    loss_pred = recon_loss(model.decode(z_pred), obs[:, 1:])
+    loss_pred = recon_loss(model.decode(z_pred), obs[:, 1:], None if mask is None else mask[:, 1:])
     # 3. Dynamics in latent space: match the encoder's latent (stop-gradient target).
     loss_latent = F.mse_loss(z_pred, z[:, 1:].detach())
     # 4. Heads: reward and termination for the transition that produced frame t+1.

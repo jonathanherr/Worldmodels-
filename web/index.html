@@ -1,0 +1,262 @@
+<meta charset="utf-8">
+<title>Four Rooms Dream</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: the dream screen is the hero; a control column sits beside it and stacks under it on phones. */
+  :root {
+    --bg: #15131f;          /* dusk violet, the void outside the map */
+    --panel: #1f1c2e;
+    --line: #34304a;
+    --fg: #ece8f6;
+    --muted: #a39dba;
+    --gold: #f2c33b;        /* the coin */
+    --slime: #e0454f;       /* the slime */
+    --meadow: #5c9e4d;
+    --font-display: "Pixelify Sans", "Courier New", monospace;
+    --font-body: "Atkinson Hyperlegible", system-ui, sans-serif;
+    --font-data: "JetBrains Mono", ui-monospace, monospace;
+    color-scheme: dark;
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 28px 48px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 32px; }
+  header { display: grid; gap: 8px; }
+  .eyebrow { font-family: var(--font-data); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); }
+  h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(34px, 6vw, 52px); line-height: 1; margin: 0; text-wrap: balance; }
+  h2 { font-family: var(--font-display); font-weight: 500; font-size: 24px; margin: 0; text-wrap: balance; }
+  p { margin: 0; max-width: 65ch; }
+  .lede { color: var(--muted); font-size: 17px; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 448px) minmax(0, 1fr); gap: 28px; align-items: start; }
+  @media (max-width: 760px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+
+  .screen { position: relative; width: 100%; max-width: 448px; aspect-ratio: 1; border: 4px solid var(--line); border-radius: 6px; background: #000; outline: none; }
+  .screen:focus-visible { border-color: var(--gold); }
+  canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  .toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); font-family: var(--font-display); font-size: 20px; padding: 4px 12px; border-radius: 4px; background: rgba(21,19,31,.85); color: var(--gold); opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+  .toast.bad { color: var(--slime); }
+  .loading { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-display); color: var(--muted); }
+
+  .panel { display: grid; gap: 22px; min-width: 0; }
+  .group { display: grid; gap: 10px; }
+  .label { font-family: var(--font-data); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .rooms { display: flex; flex-wrap: wrap; gap: 8px; }
+  .room { display: inline-flex; align-items: center; gap: 8px; font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+  .room:hover { border-color: var(--muted); }
+  .room[aria-pressed="true"] { border-color: var(--gold); }
+  .room:focus-visible, .pad button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .swatch { width: 12px; height: 12px; border-radius: 2px; }
+
+  .controls { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+  .pad { display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); gap: 4px; }
+  .pad button { font-family: var(--font-display); font-size: 18px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; touch-action: manipulation; }
+  .pad button:active { background: var(--line); }
+  .pad .up { grid-area: 1 / 2; } .pad .left { grid-area: 2 / 1; } .pad .wait { grid-area: 2 / 2; font-size: 12px; } .pad .right { grid-area: 2 / 3; } .pad .down { grid-area: 3 / 2; }
+  .keys { color: var(--muted); font-size: 14px; display: grid; gap: 2px; }
+  kbd { font-family: var(--font-data); font-size: 12px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 5px; color: var(--fg); }
+
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .stat { display: grid; gap: 2px; }
+  .stat b { font-family: var(--font-data); font-weight: 600; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .meter { height: 8px; background: var(--panel); border-radius: 4px; overflow: hidden; border: 1px solid var(--line); }
+  .meter i { display: block; height: 100%; background: var(--meadow); width: 100%; transition: width .15s; }
+  .note { color: var(--muted); font-size: 14px; }
+
+  .how { display: grid; gap: 16px; border-top: 1px solid var(--line); padding-top: 28px; }
+  .compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+  @media (max-width: 760px) { .compare { grid-template-columns: minmax(0, 1fr); } }
+  figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+  figure img { image-rendering: pixelated; border-radius: 4px; border: 1px solid var(--line); background: #fff; }
+  figure img.gif { background: #000; max-width: 280px; }
+  figcaption { color: var(--muted); font-size: 14px; }
+  @media (prefers-reduced-motion: reduce) { .toast, .meter i { transition: none; } }
+  [hidden] { display: none !important; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">World model · trained on 150k frames of play</div>
+    <h1>Four Rooms Dream</h1>
+    <p class="lede">Nothing on this screen is a game engine. Every frame is drawn by a neural network imagining what happens next, from what it learned by watching a player wander four rooms. Walk around and see how well it remembers the world.</p>
+  </header>
+
+  <section class="stage">
+    <div class="screen" id="screen" tabindex="0" aria-label="Dreamed game screen. Use arrow keys to move.">
+      <canvas id="canvas" width="64" height="64"></canvas>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <div class="loading" id="loading">Loading the dream…</div>
+    </div>
+
+    <div class="panel">
+      <div class="group">
+        <span class="label">Wake up in</span>
+        <div class="rooms" id="rooms"></div>
+      </div>
+
+      <div class="controls">
+        <div class="pad" aria-label="Movement">
+          <button class="up" data-a="1" aria-label="Up">↑</button>
+          <button class="left" data-a="3" aria-label="Left">←</button>
+          <button class="wait" data-a="0" aria-label="Wait one step">WAIT</button>
+          <button class="right" data-a="4" aria-label="Right">→</button>
+          <button class="down" data-a="2" aria-label="Down">↓</button>
+        </div>
+        <div class="keys">
+          <span><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd> or <kbd>WASD</kbd> move</span>
+          <span><kbd>Space</kbd> wait a step</span>
+          <span><kbd>R</kbd> wake up again</span>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><span class="label">Steps dreamed</span><b id="steps">0</b></div>
+        <div class="stat"><span class="label">Coins sensed</span><b id="coins">0</b></div>
+        <div class="stat"><span class="label">Frame time</span><b id="ms">–</b></div>
+      </div>
+
+      <div class="group">
+        <span class="label">Model's belief the game continues</span>
+        <div class="meter"><i id="cont"></i></div>
+        <p class="note">The coin count and this meter come from the model's own reward and episode-end predictions, not from game rules.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="how">
+    <h2>How faithful is the dream?</h2>
+    <p>The model compresses each frame into 64 numbers, and a recurrent network predicts how those numbers change when you press a key. It never sees the map directly: what lies beyond the edge of the screen, which coins are gone and where the slimes patrol all have to live in its memory. The longer you walk without a real frame, the more it can drift.</p>
+    <div class="compare">
+      <figure>
+        <img class="gif" src="long_dream.gif" alt="Real gameplay on the left, the model's dream of the same key presses on the right">
+        <figcaption>Left: the real game. Right: the model's dream of the same key presses, after 8 real frames (grey border) and then on its own (orange border).</figcaption>
+      </figure>
+      <figure>
+        <img src="rollout_error.png" alt="Charts of frame error and position accuracy against the number of dreamed steps">
+        <figcaption>Error against the number of steps dreamed, on held-out play. The right panel reads the player's map position back out of the dream.</figcaption>
+      </figure>
+    </div>
+    <p class="note" id="meta"></p>
+  </section>
+</div>
+
+<script type="module">
+  import { DreamModel } from "./dream.js";
+
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(64, 64);
+  const $ = (id) => document.getElementById(id);
+
+  let model, meta, state, current = 0, steps = 0, coins = 0, busy = false, ended = false;
+  const queue = [];
+
+  function draw(frame) {
+    const C = meta.channels;
+    for (let p = 0; p < 64 * 64; p++) {
+      img.data[p * 4] = frame[p * C] * 255;
+      img.data[p * 4 + 1] = frame[p * C + (C > 1 ? 1 : 0)] * 255;
+      img.data[p * 4 + 2] = frame[p * C + (C > 1 ? 2 : 0)] * 255;
+      img.data[p * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  let toastTimer;
+  function toast(text, bad) {
+    const t = $("toast");
+    t.textContent = text;
+    t.classList.toggle("bad", !!bad);
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 900);
+  }
+
+  function wake(i) {
+    current = i;
+    const s = meta.starts[i];
+    state = { h: Float32Array.from(s.h), z: Float32Array.from(s.z) };
+    steps = 0; coins = 0; ended = false; queue.length = 0;
+    draw(model.decode(state.z));
+    $("steps").textContent = "0";
+    $("coins").textContent = "0";
+    $("cont").style.width = "100%";
+    document.querySelectorAll(".room").forEach((b, j) => b.setAttribute("aria-pressed", String(j === i)));
+  }
+
+  async function pump() {
+    if (busy) return;
+    busy = true;
+    while (queue.length) {
+      const a = queue.shift();
+      if (ended) { queue.length = 0; break; }
+      const t0 = performance.now();
+      const out = model.step(state, a);
+      state = { h: out.h, z: out.z };
+      draw(model.decode(state.z));
+      $("ms").textContent = `${Math.round(performance.now() - t0)} ms`;
+      steps += 1;
+      $("steps").textContent = steps;
+      $("cont").style.width = `${Math.round(out.pContinue * 100)}%`;
+      const rl = out.rewardLogits;
+      const cls = rl.indexOf(Math.max(...rl));
+      if (cls === 2) { coins += 1; $("coins").textContent = coins; toast("+1 coin"); }
+      if (cls === 0 || out.pContinue < 0.5) { ended = true; toast("Caught by a slime · press R", true); }
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    busy = false;
+  }
+
+  function act(a) {
+    if (!model || queue.length > 3) return;
+    queue.push(a);
+    pump();
+  }
+
+  const KEYS = { ArrowUp: 1, w: 1, W: 1, ArrowDown: 2, s: 2, S: 2, ArrowLeft: 3, a: 3, A: 3, ArrowRight: 4, d: 4, D: 4, " ": 0 };
+  window.addEventListener("keydown", (e) => {
+    if (e.target.closest && e.target.closest("button") && (e.key === " " || e.key === "Enter")) return;
+    if (e.key in KEYS) { e.preventDefault(); act(KEYS[e.key]); }
+    else if (e.key === "r" || e.key === "R") wake(current);
+  });
+  document.querySelectorAll(".pad button").forEach((b) => b.addEventListener("click", () => act(Number(b.dataset.a))));
+
+  async function start() {
+    try {
+      const [m, w] = await Promise.all([
+        fetch("model.json").then((r) => r.json()),
+        fetch("weights.bin").then((r) => r.arrayBuffer()),
+      ]);
+      meta = m;
+      model = new DreamModel(meta, w);
+    } catch (err) {
+      $("loading").textContent = "The model files did not load. Reload the page to try again.";
+      return;
+    }
+    const rooms = $("rooms");
+    meta.starts.forEach((s, i) => {
+      const n = meta.starts.slice(0, i + 1).filter((t) => t.room === s.room).length;
+      const b = document.createElement("button");
+      b.className = "room";
+      b.id = `room-${i}`;
+      const rgb = s.colour.map((c) => Math.round(c * 255)).join(",");
+      b.innerHTML = `<span class="swatch" style="background: rgb(${rgb})"></span>${s.room} ${n}`;
+      b.addEventListener("click", () => { wake(i); $("screen").focus(); });
+      rooms.appendChild(b);
+    });
+    $("meta").textContent = `Model: ${(Object.values(meta.tensors).reduce((a, t) => a + t.length, 0) / 1e6).toFixed(1)}M parameters in the browser, checkpoint after ${meta.checkpoint_step.toLocaleString()} training steps on a 4-core CPU.`;
+    $("loading").hidden = true;
+    wake(0);
+  }
+  start();
+</script>

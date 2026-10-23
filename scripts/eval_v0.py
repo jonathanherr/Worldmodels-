@@ -58,7 +58,8 @@ def main():
     run = Path(args.run)
 
     ckpt = torch.load(run / "model.pt", map_location="cpu")
-    model = WorldModelV0(ch=ckpt["args"].get("ch", 32))
+    a = ckpt["args"]
+    model = WorldModelV0(a.get("latent", 32), a.get("hidden", 256), a.get("ch", 32), a.get("in_ch", 1), a.get("num_actions", 3))
     model.load_state_dict(ckpt["model"])
     model.eval()
 

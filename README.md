@@ -37,7 +37,7 @@ r^, c^ = heads(h_t+1)            -> reward, episode continues
 
 Training uses 32-step windows: the first 8 frames are fed in (context), and for the remaining
 24 the model feeds its own predictions back in (imagination). Losses: frame reconstruction
-(Bernoulli, summed over pixels so the small ball is not ignored), predicted-frame
+(Bernoulli, ball and paddle pixels upweighted 20x so the small ball is not ignored), predicted-frame
 reconstruction, latent matching to a stop-gradient encoder target, reward and continue heads.
 
 ## v0 results (6000 steps, 4 CPU cores, 0.7M params)
@@ -55,7 +55,7 @@ Held-out test episodes, 8 real context frames, then up to 40 imagined steps.
 \* measured on the 2% of rollouts where a ball is still visible.
 
 - The model tracks the ball well for ~15 steps, then the deterministic latent hedges between
-  possible futures and the ball smears into a fading blob (see `runs/v0/rollouts.gif`).
+  plausible futures and the ball smears into a fading blob (see `runs/v0/rollouts.gif`).
   That is the expected failure of a deterministic model and the main motivation for v1's
   stochastic latent.
 - Linear probes: a single frame's latent `z` encodes positions (R^2 0.96-0.99) but not

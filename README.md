@@ -69,6 +69,39 @@ Two training bugs found on the way, both instructive:
 2. A `tanh` on the latent saturated and collapsed it to a constant; layer norm keeps the
    scale fixed without saturating.
 
+## Squares in Squares world
+
+A simulator for the Kaggle [Squares in Squares](https://www.kaggle.com/competitions/squares-in-squares)
+problem: pack n unit squares (n = 1..1000) into the smallest axis-aligned square. A puzzle scores
+`L / sqrt(n) - 1`, where L is the enclosing square's side (lower is better).
+
+| Path | What it is |
+| --- | --- |
+| `wm/squares.py` | Geometry and checker (separating-axis overlaps, enclosing side, score, `polish`), soft-body relaxation with contact torque, and `SquarePackingEnv` (64x64 frames + ground-truth state, 10 actions: select, move, rotate, squeeze, shake) |
+| `scripts/collect_squares.py` | World-model dataset in the same layout as `wm/data.collect` |
+| `scripts/solve_squares.py` | Baseline: grid vs. a squeeze-and-shake heuristic in the simulator, writes `runs/squares/{results.json,submission.csv}` |
+| `web/squares.html` | Interactive bench: drag and rotate squares, auto-squeeze the box, copy the best packing as CSV |
+| `tests/test_squares.py` | `python -m pytest tests` |
+
+```bash
+python -m scripts.solve_squares --n-max 12      # ~2.5 min on CPU
+python -m scripts.collect_squares --n 5          # 100k train / 10k test frames, ~8 min
+```
+
+How the world works: the agent squeezes the container wall; each step runs a few relaxation passes
+that push overlapping squares apart along their separating axis. Pushes act at the penetrating
+corners, so off-center contacts also turn the squares, and tilted packings can appear on their
+own. Reward is the drop in the best valid score seen in the episode. Frames show overlaps at full
+brightness, so a world model can learn to see when a packing is invalid.
+
+Baseline (4 seeds x 800 steps per n): it matches the grid everywhere and beats it at n = 5
+(2.961 vs 3; best known 2.707) and n = 10 (3.843 vs 4; best known 3.707). Total score for
+n = 1..12 is 1.889.
+
+Caveats: the checker is ours, not Kaggle's official metric, and the CSV columns (`id,x,y,deg`
+with ids like `005_3`) copy the earlier Santa 2025 packing competition. Check both against the
+competition's Data and Evaluation tabs before submitting.
+
 ## Next steps
 
 1. **v1: RSSM.** Split the latent into deterministic `h` and stochastic `z` with a KL between

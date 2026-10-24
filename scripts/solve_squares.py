@@ -51,7 +51,10 @@ if __name__ == "__main__":
         table.append(row)
         kb = f"{row['known_best']:.4f}" if row["known_best"] else "   -  "
         print(f"n={n:3d}  side {r['side']:.4f}  grid {grid:.0f}  known best {kb}  score {r['score']:.4f}")
-    print(f"total score {sum(r['score'] for r in table):.4f}")
+    solved = sum(r["score"] for r in table)
+    # Missing puzzles score as the grid, so this is what the leaderboard would show for the file.
+    rest = sum(np.ceil(np.sqrt(n)) / np.sqrt(n) - 1 for n in range(1, 1001) if n not in solutions)
+    print(f"score for n={args.n_min}..{args.n_max}: {solved:.4f}   leaderboard total (grid elsewhere): {solved + rest:.4f}")
     (out / "results.json").write_text(json.dumps(table, indent=1))
     with open(out / "submission.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=SUBMISSION_COLUMNS)

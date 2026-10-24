@@ -73,7 +73,9 @@ Two training bugs found on the way, both instructive:
 
 A simulator for the Kaggle [Squares in Squares](https://www.kaggle.com/competitions/squares-in-squares)
 problem: pack n unit squares (n = 1..1000) into the smallest axis-aligned square. A puzzle scores
-`L / sqrt(n) - 1`, where L is the enclosing square's side (lower is better).
+`L / sqrt(n) - 1`, where L is the enclosing square's side, computed from the submitted squares
+(lower is better). The leaderboard sums all 1000 puzzles; a missing or unparsable puzzle scores
+as the grid packing.
 
 | Path | What it is |
 | --- | --- |
@@ -102,7 +104,8 @@ Submissions follow the competition's `sample_submission.csv`: `id,n,square_id,x,
 square centers and angles in radians, one block per n = 1..1000 (500,500 rows). The simulator
 works in degrees internally and converts on export; `solve_squares.py` fills every n it did not
 solve with the grid, so its `submission.csv` is always complete.
-The checker is ours, not Kaggle's official metric.
+The overlap checker is ours; the official tolerance lives in Kaggle's metric notebook
+(kaggle.com/code/metric/squares-in-squares), which we have not matched yet.
 
 ## Next steps
 

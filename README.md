@@ -83,6 +83,8 @@ as the grid packing.
 | `scripts/collect_squares.py` | World-model dataset in the same layout as `wm/data.collect` |
 | `scripts/solve_squares.py` | Baseline: grid vs. a squeeze-and-shake heuristic in the simulator, writes `runs/squares/{results.json,submission.csv}` |
 | `web/squares.html` | Interactive bench: drag and rotate squares, auto-squeeze the box, copy the best packing as CSV |
+| `wm/kaggle_metric.py` | Kaggle's official metric, copied verbatim from the competition's metric notebook |
+| `scripts/score_submission.py` | Scores a full submission CSV locally with the official metric (~3 min on 4 cores) |
 | `tests/test_squares.py` | `python -m pytest tests` |
 
 ```bash
@@ -104,8 +106,11 @@ Submissions follow the competition's `sample_submission.csv`: `id,n,square_id,x,
 square centers and angles in radians, one block per n = 1..1000 (500,500 rows). The simulator
 works in degrees internally and converts on export; `solve_squares.py` fills every n it did not
 solve with the grid, so its `submission.csv` is always complete.
-The overlap checker is ours; the official tolerance lives in Kaggle's metric notebook
-(kaggle.com/code/metric/squares-in-squares), which we have not matched yet.
+The official metric certifies non-overlap with interval arithmetic, so squares that touch
+exactly (like the textbook n = 5 optimum) are rejected as undecidable unless they are axis-aligned
+with exact decimals. `polish` therefore leaves a 1e-9 gap between every pair, and
+`solve_squares.py` scores each solved puzzle with the official metric before writing the file.
+Locally the n = 1..12 baseline file scores 28.8707 with the official metric.
 
 ## Next steps
 

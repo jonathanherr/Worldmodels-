@@ -122,13 +122,16 @@ def five_solution():
     return x, y, np.array([0, 0, 0, 0, 45.0])
 
 
-def polish(x, y, deg, tol: float = 0.0, max_iter: int = 200):
+def polish(x, y, deg, gap: float = 1e-9, max_iter: int = 200):
     """Turn a nearly feasible packing into a strictly valid one by spreading centers apart.
 
     The soft physics leaves overlaps up to SquaresConfig.feasible_tol. Scaling every center away
-    from the middle by a tiny factor removes them at a matching cost in side length. Returns
-    (x, y, deg, report) with the enclosing square moved to start at the origin.
+    from the middle by a tiny factor removes them at a matching cost in side length. Kaggle's
+    metric certifies non-overlap with interval arithmetic, so squares that merely touch in float64
+    can be rejected; we keep every pair at least `gap` apart instead. Returns (x, y, deg, report)
+    with the enclosing square moved to start at the origin.
     """
+    tol = -gap
     x, y, deg = (np.array(a, dtype=np.float64) for a in (x, y, deg))
     cx, cy = x.mean(), y.mean()
     scale = 1.0
@@ -137,7 +140,7 @@ def polish(x, y, deg, tol: float = 0.0, max_iter: int = 200):
         report = validate(sx, sy, deg, tol)
         if report["valid"]:
             break
-        scale *= 1 + max(report["worst_overlap"], 1e-12)
+        scale *= 1 + max(report["worst_overlap"] + gap, 1e-12)
     lo = corners(sx, sy, deg).reshape(-1, 2).min(0)
     return sx - lo[0], sy - lo[1], deg, report
 
@@ -163,6 +166,20 @@ def to_submission_rows(solutions: dict, fill_to: int | None = MAX_N) -> list[dic
             rows.append({"id": len(rows), "n": n, "square_id": k, "x": float(x[k]), "y": float(y[k]),
                          "angle": float(np.deg2rad(deg[k]))})
     return rows
+
+
+def official_check(rows: list[dict]) -> dict:
+    """Score one puzzle's submission rows with Kaggle's own metric (wm/kaggle_metric.py).
+
+    The rows go through the same decimal-string round trip as a CSV file, so this is exactly
+    what the leaderboard would compute for that puzzle, interval-arithmetic overlap check included.
+    """
+    from . import kaggle_metric
+
+    n = rows[0]["n"]
+    as_text = [{k: repr(v) if isinstance(v, float) else str(v) for k, v in r.items()} for r in rows]
+    _, score, side, reason = kaggle_metric.evaluate_single_puzzle(n, as_text)
+    return {"valid": reason == "ok", "score": score, "side": float(side) if side else None, "reason": reason}
 
 
 # ----------------------------------------------------------------------------- physics

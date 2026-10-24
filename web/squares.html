@@ -315,8 +315,9 @@ textarea { width: 100%; box-sizing: border-box; font: 12px var(--f-mono); backgr
     let scale = 1;
     for (let it = 0; it < 200; it++) {
       for (let i = 0; i < n; i++) { xs[i] = cx + (bx[i] - cx) * scale; ys[i] = cy + (by[i] - cy) * scale; }
-      const w = worstOverlap(false); if (w <= 0) break;
-      scale *= 1 + Math.max(w, 1e-12);
+      // Kaggle certifies non-overlap exactly, so keep a 1e-9 gap rather than letting squares touch.
+      const w = worstOverlap(false); if (w <= -1e-9) break;
+      scale *= 1 + Math.max(w + 1e-9, 1e-12);
     }
     const b = bounds();
     const out = { L: b.L, x: xs.map(v => v - b.lx), y: ys.map(v => v - b.ly), d: ds.slice() };

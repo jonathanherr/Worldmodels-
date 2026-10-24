@@ -4,13 +4,14 @@ The page only needs the dynamics (GRU + prior), the decoder and the heads; it st
 latent states computed here from real gameplay, so the encoder is not shipped.
 
 Writes to --out:
-  weights.bin     float32 tensors, concatenated
+  weights.bin     float32 tensors, concatenated (weights.b64.txt: the same, base64)
   model.json      shapes, offsets, start states, and a reference step for testing
 Conv-transpose weights are stored as (in, kH, kW, out) and the decoder's first linear layer
 emits a 4x4 grid in height-width-channel order, which is what web/dream.js expects.
 """
 
 import argparse
+import base64
 import json
 from pathlib import Path
 
@@ -107,7 +108,10 @@ if __name__ == "__main__":
         manifest[name] = {"shape": list(v.shape), "offset": offset, "length": int(arr.size)}
         blobs.append(arr)
         offset += arr.size
-    np.concatenate(blobs).tofile(out / "weights.bin")
+    weights = np.concatenate(blobs)
+    weights.tofile(out / "weights.bin")
+    # Same bytes as base64 text, for hosts that only serve text and web types (the published page uses this).
+    (out / "weights.b64.txt").write_text(base64.b64encode(weights.tobytes()).decode("ascii"))
 
     starts = start_states(model, load(args.data))
     meta = {

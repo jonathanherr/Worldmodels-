@@ -69,6 +69,38 @@ Two training bugs found on the way, both instructive:
 2. A `tanh` on the latent saturated and collapsed it to a constant; layer norm keeps the
    scale fixed without saturating.
 
+## Game world (branch `game-world`)
+
+`wm/game.py` is a small top-down game: a 24x24 tile map of four themed rooms (meadow, desert,
+stone hall, cabin), 18 coins and two patrolling slimes. The agent sees a 64x64 RGB view centred
+on the player and has 5 actions (stay, up, down, left, right), so the model has to learn the map
+itself to predict what scrolls into view.
+
+```bash
+python -m scripts.collect_data --env game          # 150k train / 15k test frames, ~1.5 min
+python -m scripts.train_v0 --data data/game/train.npz --out runs/game --steps 8000 \
+  --ch 16 --batch 16 --latent 64 --hidden 512 --lr 5e-4   # ~85 min on 4 CPU cores
+python -m scripts.eval_game                         # runs/game/{rollout_error.png,rollouts.gif,long_dream.gif}
+python -m scripts.export_web && cp runs/game/*.gif runs/game/rollout_error.png web/
+python -m http.server -d web 8000                   # play the dream at http://localhost:8000
+node web/test_dream.mjs web                         # checks the JS port against PyTorch
+```
+
+`scripts/train_game_gpu.sh` runs a bigger version (wider convs, 300k frames, 30k steps).
+
+Results for the CPU run (8000 steps, 1.5M params), 8 real context frames then dreaming:
+
+| Steps dreamed | Pixel MSE (model) | Pixel MSE (copy last frame) | Dream shows the exact tile | Mean tile error |
+| --- | --- | --- | --- | --- |
+| 1 | 0.0033 | 0.0163 | 80% | 0.4 |
+| 8 | 0.0057 | 0.0518 | 66% | 0.7 |
+| 16 | 0.0062 | 0.0681 | 58% | 0.7 |
+| 48 | 0.0076 | 0.0856 | 61% | 0.9 |
+
+"Exact tile" matches each dreamed frame against the empty map's view from every walkable tile
+(100% on real frames). The dream keeps the right room and walls over long walks, but drifts by
+a tile now and then, smears coins into rows of faint "maybe coins", and rarely draws slimes.
+
 ## Next steps
 
 1. **v1: RSSM.** Split the latent into deterministic `h` and stochastic `z` with a KL between

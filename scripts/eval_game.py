@@ -17,6 +17,7 @@ import numpy as np
 import torch
 
 from wm.data import SequenceSampler, load
+from wm.game import PAD, TILE, VIEW, GameWorld
 from wm.model import WorldModelV0
 
 matplotlib.use("Agg")
@@ -31,13 +32,24 @@ def load_model(run: Path) -> tuple[WorldModelV0, dict]:
     return model.eval(), ckpt
 
 
-def fit_probe(x, y, alpha=1e-2):
-    A = np.concatenate([x, np.ones((len(x), 1))], 1)
-    return np.linalg.solve(A.T @ A + alpha * np.eye(A.shape[1]), A.T @ y)
+class Localiser:
+    """Finds which map tile a frame shows, by matching it against the empty map's view from
+    every walkable tile (sprites ignored). Tells us whether a dream still knows where it is."""
 
+    def __init__(self):
+        g = GameWorld(seed=0)
+        self.tiles = np.array([(x, y) for y in range(g.map.shape[0]) for x in range(g.map.shape[1]) if g.map[y, x] == 0])
+        views = []
+        for x, y in self.tiles:
+            x0, y0 = (x + PAD - VIEW // 2) * TILE, (y + PAD - VIEW // 2) * TILE
+            views.append(g.world_img[y0 : y0 + VIEW * TILE, x0 : x0 + VIEW * TILE])
+        self.views = torch.from_numpy(np.stack(views)).flatten(1)  # K, H*W*3
 
-def apply_probe(w, x):
-    return np.concatenate([x, np.ones((len(x), 1))], 1) @ w
+    def __call__(self, frames: np.ndarray) -> np.ndarray:
+        """frames: N,H,W,3 -> N,2 best-matching tile (x, y)."""
+        f = torch.from_numpy(np.ascontiguousarray(frames)).float().flatten(1)
+        d = torch.cdist(f, self.views.float())
+        return self.tiles[d.argmin(1).numpy()]
 
 
 def side_by_side(real, dream, k0, scale=3, label_rows=4):
@@ -85,13 +97,10 @@ def main():
     real = obs.permute(0, 1, 3, 4, 2).numpy()            # N,T,H,W,3
     pred = pred.permute(0, 1, 3, 4, 2).numpy()           # N,T-1,H,W,3 (frames 1..T-1)
 
-    # A linear probe from the encoder latent of REAL frames to the player's map position,
-    # applied to DREAMED latents: does the dream still know where the player is?
-    zr = z.flatten(0, 1).numpy()
-    xy = state[..., :2].reshape(-1, 2)
-    half = len(zr) // 2
-    w = fit_probe(zr[:half], xy[:half])
-    probe_err_real = float(np.abs(apply_probe(w, zr[half:]) - xy[half:]).sum(1).mean())
+    # Does the dream still know where the player is? Match each dreamed frame against the
+    # map's view from every tile. On real frames this localiser should be (near) perfect.
+    localise = Localiser()
+    loc_real = float((localise(real[:, k0]) == state[:, k0, :2]).all(1).mean())
 
     horizons = np.arange(1, args.horizon + 1)
     pix, copy, pos_err, pos_ok = [], [], [], []
@@ -99,8 +108,7 @@ def main():
         t = k0 + k - 1
         pix.append(float(((pred[:, t - 1] - real[:, t]) ** 2).mean()))
         copy.append(float(((real[:, k0 - 1] - real[:, t]) ** 2).mean()))
-        est = apply_probe(w, z_pred[:, t - 1].numpy())
-        err = np.abs(np.round(est) - state[:, t, :2]).sum(1)  # Manhattan distance in tiles
+        err = np.abs(localise(pred[:, t - 1]) - state[:, t, :2]).sum(1)  # Manhattan distance in tiles
         pos_err.append(float(err.mean()))
         pos_ok.append(float((err == 0).mean()))
 
@@ -108,7 +116,7 @@ def main():
     ax[0].plot(horizons, pix, label="world model")
     ax[0].plot(horizons, copy, "--", label="copy last frame")
     ax[0].set(xlabel="steps dreamed after context", ylabel="pixel MSE", title="Frame error vs horizon")
-    ax[1].plot(horizons, pos_ok, label="dream knows exact tile")
+    ax[1].plot(horizons, pos_ok, label="dream shows the exact tile")
     ax[1].set(xlabel="steps dreamed after context", ylabel="fraction of rollouts", ylim=(0, 1.02),
               title="Player position read from the dream")
     for a in ax:
@@ -134,7 +142,7 @@ def main():
 
     metrics = {
         "checkpoint_step": ckpt["step"], "context": k0, "horizon": args.horizon, "num_sequences": args.num,
-        "probe_abs_err_tiles_on_real_frames": probe_err_real,
+        "localiser_accuracy_on_real_frames": loc_real,
         "rollout_pixel_mse": dict(zip(map(int, horizons), pix)),
         "copy_last_frame_pixel_mse": dict(zip(map(int, horizons), copy)),
         "dream_position_err_tiles": dict(zip(map(int, horizons), pos_err)),
@@ -142,7 +150,7 @@ def main():
         "long_dream_steps": L - k0, "long_dream_pixel_mse": long_mse,
     }
     (run / "metrics.json").write_text(json.dumps(metrics, indent=1))
-    print(f"probe error on real frames: {probe_err_real:.2f} tiles")
+    print(f"localiser accuracy on real frames: {loc_real:.2f}")
     for k in [1, 4, 8, 16, 32, 48]:
         if k <= args.horizon:
             print(f"h={k:2d} pixMSE={pix[k-1]:.4f} (copy {copy[k-1]:.4f}) pos_exact={pos_ok[k-1]:.2f} pos_err={pos_err[k-1]:.2f}")

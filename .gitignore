@@ -3,3 +3,4 @@ runs/
 *.log
 __pycache__/
 web_gpu/
+web/weights.bin

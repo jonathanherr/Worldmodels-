@@ -89,7 +89,8 @@ as the grid packing.
 | `wm/best_store.py` | Shared best-per-n store: one JSON per n with exact decimal strings; `offer` keeps a packing only if the official metric accepts it and it is shorter |
 | `scripts/build_constructions.py` | Sweeps the construction family over sides up to 32, wraps and trims to every n, polishes, and offers each packing to the store (~25 min on 4 cores) |
 | `scripts/write_submission.py` | Full 1..1000 submission CSV from the store |
-| `tests/test_squares.py`, `tests/test_constructions.py` | `python -m pytest tests` |
+| `scripts/fanout.py` | Runs many solver processes over an n range, split across machines by lease files in the store |
+| `tests/test_squares.py`, `tests/test_constructions.py`, `tests/test_fanout.py` | `python -m pytest tests` |
 
 ```bash
 python -m scripts.solve_squares --n-max 12      # ~2.5 min on CPU
@@ -167,6 +168,23 @@ reach the optimum for 5 and 10), so for small n the local optimizer does the wor
 its keep from about n = 18 up: at n = 29 random restarts never got below the grid's 6.0, while
 the evolved net reached 5.992 twice in separate runs. Deforming a stored construction
 (`--from-store`) gave the 17, 18, 19 and 54 results. These packings are in `solutions/`.
+
+### Fanning solvers out over many processes and machines
+
+`scripts/fanout.py` turns a range of n into jobs (a chunk of n with one seed), orders them by the
+chunk's current score so the puzzles with the most to gain go first, and runs `--procs` solver
+processes at a time. Jobs are claimed with lease files in `$SQUARES_BEST_DIR/leases/`, so every
+copy started against the same store (another process, machine or agent) takes the next unclaimed
+job instead of repeating one; a runner that dies loses its leases after `--lease-ttl` seconds.
+Arguments after `--` go to the solver (`scripts.evolve_squares` unless `--module` says otherwise).
+The store itself now compares and replaces under a per-n lock, so concurrent writers of one n
+always leave the shortest packing.
+
+```bash
+export SQUARES_BEST_DIR=/path/to/shared/best
+python -m scripts.fanout --n 101-1000 --chunk 10 --seeds 0,1 --procs 8 -- --from-store --gens 20
+python -m scripts.fanout --n 101-1000 --chunk 10 --seeds 0,1 --dry-run -- --from-store --gens 20  # job order and states
+```
 
 ## Next steps
 

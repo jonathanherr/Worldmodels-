@@ -13,12 +13,16 @@ Layout: one JSON file per puzzle, `<dir>/n0005.json`:
 x, y and angle (radians) are the exact decimal strings that go into the submission CSV, so a
 stored packing scores the same when it is written out. The directory is `$SQUARES_BEST_DIR`
 if set (point several runs at one shared folder), otherwise `solutions/` in the repo.
-Writes go through a temp file and a rename, so concurrent writers never leave a torn file.
+Writes go through a temp file and a rename, so concurrent writers never leave a torn file, and
+the compare-and-replace runs under a per-n lock file, so of two runs storing the same n at
+once the shorter packing always wins.
 """
 
 import json
 import os
 import time
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +38,29 @@ def store_dir() -> Path:
 
 def _path(n: int, root: Path | None = None) -> Path:
     return (root or store_dir()) / f"n{n:04d}.json"
+
+
+@contextmanager
+def _lock(n: int, root: Path | None = None, stale: float = 60.0):
+    """Hold `<dir>/n0005.lock` (created exclusively) for the duration; a lock older than `stale`
+    seconds belongs to a run that died and is broken."""
+    p = _path(n, root).with_suffix(".lock")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    while True:
+        try:
+            os.close(os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                if time.time() - p.stat().st_mtime > stale:
+                    p.unlink()
+            except FileNotFoundError:
+                pass
+            time.sleep(0.01)
+    try:
+        yield
+    finally:
+        p.unlink(missing_ok=True)
 
 
 def grid_side(n: int) -> float:
@@ -85,13 +112,15 @@ def offer(n: int, x, y, deg, source: str, root: Path | None = None, margin: floa
              "angle": [repr(r["angle"]) for r in rows]}
     p = _path(n, root)
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(f".tmp{os.getpid()}")
+    tmp = p.with_suffix(f".tmp{os.getpid()}-{uuid.uuid4().hex[:8]}")
     tmp.write_text(json.dumps(entry))
-    # Re-read just before the rename so a better packing written meanwhile by another run wins.
-    if side >= best_side(n, root) - margin:
-        tmp.unlink()
-        return {"accepted": False, "side": side, "previous": best_side(n, root), "reason": "beaten meanwhile"}
-    os.replace(tmp, p)
+    # Re-read under the lock so a better packing written meanwhile by another run wins.
+    with _lock(n, root):
+        current = best_side(n, root)
+        if side >= current - margin:
+            tmp.unlink()
+            return {"accepted": False, "side": side, "previous": current, "reason": "beaten meanwhile"}
+        os.replace(tmp, p)
     return {"accepted": True, "side": side, "previous": previous, "reason": "ok"}
 
 

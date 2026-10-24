@@ -70,3 +70,17 @@ def test_submission_rows_use_radians():
     assert np.isclose(five[4]["angle"], np.pi / 4)
     # Unsolved puzzles fall back to the grid, which is what the sample submission contains.
     assert [(r["x"], r["y"]) for r in rows if r["n"] == 3] == [(0.5, 0.5), (1.5, 0.5), (0.5, 1.5)]
+
+
+def test_polished_packing_passes_official_metric():
+    from wm.squares import official_check, to_submission_rows
+    # The exact n = 5 optimum touches, which the official interval check cannot certify.
+    exact = to_submission_rows({5: five_solution()}, fill_to=None)
+    assert not official_check(exact)["valid"]
+    x, y, deg, report = polish(*five_solution())
+    assert report["valid"] and report["worst_overlap"] <= -1e-9
+    c = official_check(to_submission_rows({5: (x, y, deg)}, fill_to=None))
+    assert c["valid"], c["reason"]
+    assert abs(c["side"] - KNOWN_BEST[5]) < 1e-7
+    # The grid fallback is accepted as is.
+    assert official_check(to_submission_rows({}, fill_to=9)[-9:])["valid"]

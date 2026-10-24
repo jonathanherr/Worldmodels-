@@ -2,3 +2,5 @@ torch>=2.2
 numpy
 matplotlib
 imageio
+mpmath
+pandas

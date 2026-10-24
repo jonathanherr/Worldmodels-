@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from wm.squares import (KNOWN_BEST, SUBMISSION_COLUMNS, SquarePackingEnv, SquaresConfig, grid_solution, polish,
+from wm.squares import (KNOWN_BEST, SUBMISSION_COLUMNS, official_check, SquarePackingEnv, SquaresConfig, grid_solution, polish,
                         squeeze_policy, to_submission_rows, validate)
 
 
@@ -26,7 +26,7 @@ def solve(n: int, seeds: int, steps: int):
         while not done:
             _, _, done, _ = env.step(squeeze_policy(env, rng))
         x, y, deg, report = polish(*env.best_solution)
-        if report["valid"] and report["side"] < best_side:
+        if report["valid"] and report["side"] < best_side - 1e-6:
             best, best_side = (x, y, deg), report["side"]
     return best
 
@@ -56,7 +56,12 @@ if __name__ == "__main__":
     rest = sum(np.ceil(np.sqrt(n)) / np.sqrt(n) - 1 for n in range(1, 1001) if n not in solutions)
     print(f"score for n={args.n_min}..{args.n_max}: {solved:.4f}   leaderboard total (grid elsewhere): {solved + rest:.4f}")
     (out / "results.json").write_text(json.dumps(table, indent=1))
+    rows = to_submission_rows(solutions)
+    # Score every puzzle we solved with Kaggle's own metric, from the values as written out.
+    for n in solutions:
+        c = official_check([r for r in rows if r["n"] == n])
+        assert c["valid"], f"n={n} rejected by the official metric: {c['reason']}"
     with open(out / "submission.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=SUBMISSION_COLUMNS)
         w.writeheader()
-        w.writerows(to_submission_rows(solutions))
+        w.writerows(rows)

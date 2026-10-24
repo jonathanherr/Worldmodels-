@@ -131,6 +131,42 @@ python -m scripts.build_constructions
 python -m scripts.write_submission --out submission.csv
 python -m scripts.score_submission submission.csv
 ```
+### Neuroevolution solver and the shared best-per-n store
+
+| Path | What it is |
+| --- | --- |
+| `wm/best_store.py` | Shared best-per-n store: one JSON per n with the exact decimal strings of the submission. `offer()` keeps a packing only if Kaggle's metric certifies it and it is shorter than the stored one; `submission_rows()` builds the full 1..1000 file |
+| `wm/pack_opt.py` | Fast local optimizer: closed-form separating-axis overlap energy and gradient (numba), a penalty method with the box side as a variable (`compact`), and a shrink loop that ends on an exactly feasible packing with a 2e-9 margin (`squeeze`) |
+| `wm/neuroevo.py` | A small MLP maps per-square features (grid cell or stored-packing position, rank, Fourier terms, fixed noise, features of n) to an offset and a tilt; CMA-ES evolves its weights. Fitness is Baldwinian: decode, `compact_squeeze`, score the box. The best packing per n is basin-hopped (`refine`) and offered to the store |
+| `scripts/evolve_squares.py` | CLI: `--per-n`, one shared net across sizes (default), `--from-store` (deform the stored best instead of the grid), `--baseline` (random restarts with the same budget), `--refine-only` |
+
+```bash
+# Point every run, on any machine or thread, at one folder; the store keeps the best certified packing.
+export SQUARES_BEST_DIR=/mnt/project-files/squares/best
+python -m scripts.evolve_squares --n 17-19 --per-n --gens 30          # ~5 min on 4 cores
+python -m scripts.evolve_squares --n 37,50 --per-n --from-store        # refine construction results
+```
+
+Parallel runs scale by splitting the n range or the seeds across processes or machines that share
+`SQUARES_BEST_DIR`; writes are atomic and the store only ever moves to a shorter certified side.
+
+Results (4 CPU cores, about 30 minutes in total, every packing certified by the official metric):
+
+| n | before (grid or construction) | neuroevolution | best known (Friedman) |
+| --- | --- | --- | --- |
+| 11 | 3.9142 | 3.87708 | 3.8771 |
+| 17 | 4.7071 | 4.67765 | 4.6756 |
+| 18 | 4.8284 | 4.82288 | 4.8229 |
+| 19 | 4.9142 | 4.88562 | 4.8856 |
+| 29 | 6.0000 | 5.99236 | 5.9344 |
+| 54 | 7.9142 | 7.85142 | |
+
+No gain at n = 37, 41, 50, 55, 66, 68 within 20-25 generations. Honest control: at n = 5, 10 and
+11 random restarts with the same number of `compact_squeeze` calls do about as well as the net (both
+reach the optimum for 5 and 10), so for small n the local optimizer does the work. The net earns
+its keep from about n = 18 up: at n = 29 random restarts never got below the grid's 6.0, while
+the evolved net reached 5.992 twice in separate runs. Deforming a stored construction
+(`--from-store`) gave the 17, 18, 19 and 54 results. These packings are in `solutions/`.
 
 ## Next steps
 

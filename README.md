@@ -85,7 +85,11 @@ as the grid packing.
 | `web/squares.html` | Interactive bench: drag and rotate squares, auto-squeeze the box, copy the best packing as CSV |
 | `wm/kaggle_metric.py` | Kaggle's official metric, copied verbatim from the competition's metric notebook |
 | `scripts/score_submission.py` | Scores a full submission CSV locally with the official metric (~3 min on 4 cores) |
-| `tests/test_squares.py` | `python -m pytest tests` |
+| `wm/constructions.py` | Known constructions from Friedman's survey: a tilted-block family (Goebel's 45-degree diagonal strips and central blocks, off-center blocks) plus `l_wrap` |
+| `wm/best_store.py` | Shared best-per-n store: one JSON per n with exact decimal strings; `offer` keeps a packing only if the official metric accepts it and it is shorter |
+| `scripts/build_constructions.py` | Sweeps the construction family over sides up to 32, wraps and trims to every n, polishes, and offers each packing to the store (~25 min on 4 cores) |
+| `scripts/write_submission.py` | Full 1..1000 submission CSV from the store |
+| `tests/test_squares.py`, `tests/test_constructions.py` | `python -m pytest tests` |
 
 ```bash
 python -m scripts.solve_squares --n-max 12      # ~2.5 min on CPU
@@ -111,6 +115,22 @@ exactly (like the textbook n = 5 optimum) are rejected as undecidable unless the
 with exact decimals. `polish` therefore leaves a 1e-9 gap between every pair, and
 `solve_squares.py` scores each solved puzzle with the official metric before writing the file.
 Locally the n = 1..12 baseline file scores 28.8707 with the official metric.
+
+Known constructions (`scripts/build_constructions.py`): every packing is a block of 45-degree
+squares (p rows along the main diagonal, q per row, optionally shifted) with axis-aligned staircases
+grown from the four corners, which reproduces Goebel's families from Friedman's survey (n = 10, 26,
+28, 38, 52, 65, 67, 85, 89 at their best-known sides). Sides are swept over (i + j sqrt2)/2, the
+values where these constructions go tight; wrapping L layers keeps the excess over floor(s)^2, and
+dropping squares covers every smaller n. This beats the grid at 399 of the 1000 puzzles and the
+full file scores **23.4405** with the official metric (grid 28.94). The remaining gaps to the
+survey for n <= 100 (11, 17, 18, 19, 29, 37, 41, 50, 54, 55, 66, 68-71, 83, 86-88) need other angles.
+
+```bash
+export SQUARES_BEST_DIR=/path/to/shared/best   # default: solutions/ in the repo
+python -m scripts.build_constructions
+python -m scripts.write_submission --out submission.csv
+python -m scripts.score_submission submission.csv
+```
 
 ## Next steps
 

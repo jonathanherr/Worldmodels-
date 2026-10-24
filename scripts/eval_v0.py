@@ -6,6 +6,8 @@ Produces, in the run directory:
   metrics.json        all numbers, including a linear probe of the latent for true state
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 from pathlib import Path

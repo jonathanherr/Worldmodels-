@@ -8,6 +8,8 @@ Actions: 0 stay, 1 up, 2 down, 3 left, 4 right. One tile per step.
 Reward: +1 per coin. Touching a slime gives -1 and ends the episode.
 """
 
+from __future__ import annotations
+
 import numpy as np
 
 STAY, UP, DOWN, LEFT, RIGHT = range(5)

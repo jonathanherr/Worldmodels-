@@ -7,6 +7,8 @@ Frames are single-channel float32 in [0, 1]. The ball is drawn at intensity 1.0 
 the paddle at 0.5, so the two can be told apart from pixels alone (used in evaluation).
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import numpy as np

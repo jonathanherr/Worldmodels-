@@ -1,5 +1,7 @@
 """Collect episodes with an exploring policy and serve fixed-length training sequences."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np

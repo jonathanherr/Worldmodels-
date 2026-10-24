@@ -28,6 +28,8 @@ if __name__ == "__main__":
     p.add_argument("--seq-len", type=int, default=32)
     p.add_argument("--context", type=int, default=8)
     p.add_argument("--ch", type=int, default=32, help="conv width; 16 is fine on CPU")
+    p.add_argument("--latent", type=int, default=32)
+    p.add_argument("--hidden", type=int, default=256)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
@@ -37,8 +39,10 @@ if __name__ == "__main__":
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    sampler = SequenceSampler(load(args.data), args.seq_len, seed=args.seed)
-    model = WorldModelV0(ch=args.ch).to(device)
+    data = load(args.data)
+    sampler = SequenceSampler(data, args.seq_len, seed=args.seed)
+    args.in_ch, args.num_actions = int(data["obs"].shape[-1]), int(data["num_actions"])
+    model = WorldModelV0(args.latent, args.hidden, args.ch, args.in_ch, args.num_actions).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
     print(f"device={device} params={sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
 

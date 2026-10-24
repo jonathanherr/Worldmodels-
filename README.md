@@ -168,6 +168,28 @@ its keep from about n = 18 up: at n = 29 random restarts never got below the gri
 the evolved net reached 5.992 twice in separate runs. Deforming a stored construction
 (`--from-store`) gave the 17, 18, 19 and 54 results. These packings are in `solutions/`.
 
+### Dimensional relaxation (lifted squares)
+
+`wm/lift.py` gives every square a height so jammed squares can pass over each other, then pushes
+the heights back to the plane. Two forms: *slab* (square prisms of thickness 1 in a height box
+that shrinks to 0; z is one more separating axis) and *lens* (pair overlap times
+1 - |dz|, heights held by a spring that stiffens to infinity). `lift_search` asks for a box a bit
+smaller than a stored packing; `lift_compact` is `compact` with lifted squares, for random starts.
+`scripts/lift_squares.py` runs each against its flat control on the same seeds:
+
+```bash
+python -m scripts.lift_squares random --n 17,29,37 --seeds 16        # lift_compact vs compact
+SQUARES_BEST_DIR=/mnt/project-files/squares/best \
+  python -m scripts.lift_squares store --n 54 --seeds 8 --tries 60 --shrink 0.0005 --offer
+```
+
+Result (2026-10-24, 4 CPUs, about an hour): one store win, n = 54 from 7.85142 to 7.85113
+(total score -0.00004). The slab form does nothing: a pair only uses the z axis once it is
+almost fully separated in height, so small overlaps never lift. The lens form does lift and
+flatten, but on the stored packings at n = 11-150 it nearly always relaxes back into the same jam;
+the flat control (jitter + relax) found nothing either. From random starts at n = 10-68 the lens
+compaction ties the flat one (better best at 37 and 66, worse at 17 and 26, never below the store).
+
 ## Next steps
 
 1. **v1: RSSM.** Split the latent into deterministic `h` and stochastic `z` with a KL between

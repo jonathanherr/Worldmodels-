@@ -327,8 +327,10 @@ textarea { width: 100%; box-sizing: border-box; font: 12px var(--f-mono); backgr
   function csvRows() {
     if (!best) return "";
     if (exportedFor !== best) { exported = polished(); exportedFor = best; }
-    const id = String(n).padStart(3, "0");
-    return ["id,x,y,deg"].concat(exported.x.map((x, k) => `${id}_${k},${x.toFixed(9)},${exported.y[k].toFixed(9)},${exported.d[k].toFixed(6)}`)).join("\n");
+    // Rows for this puzzle only; the id column must be renumbered when merged into a full file.
+    const first = n * (n - 1) / 2;
+    return ["id,n,square_id,x,y,angle"].concat(exported.x.map((x, k) =>
+      `${first + k},${n},${k},${x.toFixed(12)},${exported.y[k].toFixed(12)},${(exported.d[k] * Math.PI / 180).toFixed(12)}`)).join("\n");
   }
 
   // ---------------- loop

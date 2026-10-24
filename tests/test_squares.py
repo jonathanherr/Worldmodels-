@@ -58,3 +58,15 @@ def test_env_step_shapes_and_reward():
     assert done
     assert np.isclose(total, start - env.best)
     assert 0.0 <= obs.min() and obs.max() <= 1.0
+
+
+def test_submission_rows_use_radians():
+    from wm.squares import SUBMISSION_COLUMNS, to_submission_rows
+    rows = to_submission_rows({5: five_solution()})
+    assert len(rows) == 1000 * 1001 // 2 and list(rows[0]) == SUBMISSION_COLUMNS
+    assert [r["id"] for r in rows[:3]] == [0, 1, 2]
+    five = [r for r in rows if r["n"] == 5]
+    assert [r["square_id"] for r in five] == list(range(5)) and five[0]["id"] == 10
+    assert np.isclose(five[4]["angle"], np.pi / 4)
+    # Unsolved puzzles fall back to the grid, which is what the sample submission contains.
+    assert [(r["x"], r["y"]) for r in rows if r["n"] == 3] == [(0.5, 0.5), (1.5, 0.5), (0.5, 1.5)]

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from wm.squares import (KNOWN_BEST, SquarePackingEnv, SquaresConfig, grid_solution, polish,
+from wm.squares import (KNOWN_BEST, SUBMISSION_COLUMNS, SquarePackingEnv, SquaresConfig, grid_solution, polish,
                         squeeze_policy, to_submission_rows, validate)
 
 
@@ -54,6 +54,6 @@ if __name__ == "__main__":
     print(f"total score {sum(r['score'] for r in table):.4f}")
     (out / "results.json").write_text(json.dumps(table, indent=1))
     with open(out / "submission.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["id", "x", "y", "deg"])
+        w = csv.DictWriter(f, fieldnames=SUBMISSION_COLUMNS)
         w.writeheader()
         w.writerows(to_submission_rows(solutions))

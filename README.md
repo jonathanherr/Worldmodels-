@@ -98,9 +98,11 @@ Baseline (4 seeds x 800 steps per n): it matches the grid everywhere and beats i
 (2.961 vs 3; best known 2.707) and n = 10 (3.843 vs 4; best known 3.707). Total score for
 n = 1..12 is 1.889.
 
-Caveats: the checker is ours, not Kaggle's official metric, and the CSV columns (`id,x,y,deg`
-with ids like `005_3`) copy the earlier Santa 2025 packing competition. Check both against the
-competition's Data and Evaluation tabs before submitting.
+Submissions follow the competition's `sample_submission.csv`: `id,n,square_id,x,y,angle`, with
+square centers and angles in radians, one block per n = 1..1000 (500,500 rows). The simulator
+works in degrees internally and converts on export; `solve_squares.py` fills every n it did not
+solve with the grid, so its `submission.csv` is always complete.
+The checker is ours, not Kaggle's official metric.
 
 ## Next steps
 

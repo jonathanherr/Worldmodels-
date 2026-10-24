@@ -142,17 +142,26 @@ def polish(x, y, deg, tol: float = 0.0, max_iter: int = 200):
     return sx - lo[0], sy - lo[1], deg, report
 
 
-def to_submission_rows(solutions: dict) -> list[dict]:
-    """Flatten {n: (x, y, deg)} into rows of id, x, y, deg with ids like "005_3".
+# Columns of the competition's sample_submission.csv: a running row id, the puzzle size n, the
+# square's index within the puzzle, its center, and its angle in radians. A full submission has
+# one block per n = 1..1000 (500,500 rows).
+SUBMISSION_COLUMNS = ["id", "n", "square_id", "x", "y", "angle"]
+MAX_N = 1000
 
-    The column layout follows Kaggle's earlier packing competition (Santa 2025) and is a guess:
-    check it against the Data tab of the Squares in Squares competition before submitting.
+
+def to_submission_rows(solutions: dict, fill_to: int | None = MAX_N) -> list[dict]:
+    """Flatten {n: (x, y, deg)} into submission rows, converting degrees to radians.
+
+    Puzzles missing from `solutions` up to `fill_to` get the grid packing, so the file is
+    complete (the sample submission is exactly this grid). Pass fill_to=None to skip that.
     """
+    sizes = sorted(set(solutions) | set(range(1, (fill_to or 0) + 1)))
     rows = []
-    for n in sorted(solutions):
-        x, y, deg = solutions[n]
+    for n in sizes:
+        x, y, deg = solutions[n] if n in solutions else grid_solution(n)
         for k in range(n):
-            rows.append({"id": f"{n:03d}_{k}", "x": float(x[k]), "y": float(y[k]), "deg": float(deg[k])})
+            rows.append({"id": len(rows), "n": n, "square_id": k, "x": float(x[k]), "y": float(y[k]),
+                         "angle": float(np.deg2rad(deg[k]))})
     return rows
 
 

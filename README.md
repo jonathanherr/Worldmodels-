@@ -190,6 +190,52 @@ flatten, but on the stored packings at n = 11-150 it nearly always relaxes back 
 the flat control (jitter + relax) found nothing either. From random starts at n = 10-68 the lens
 compaction ties the flat one (better best at 37 and 66, worse at 17 and 26, never below the store).
 
+### Research swarm: composable tools, personas, shared board
+
+`wm/swarm/` turns the solvers above into building blocks that a population of agents with
+different theoretical backgrounds combine into new approaches, coordinating through a board.
+
+* **Tools** (`wm/swarm/tools.py`): 20 functions with one signature, `tool(ctx, state, **args) ->
+  Packing`, in five kinds: *construct* (grid, store, random, tilted lattice, tilted-block family,
+  a larger stored packing with squares dropped, a smaller one wrapped in an L, C4-symmetric seed),
+  *perturb* (jolt, relocate into holes, twist field, press, heat), *relax* (FIRE, penalty compact,
+  squeeze, 3D lift), *combine* (crossover along a random cut) and *meta* (repeat with Metropolis
+  acceptance, best_of). A **recipe** is a JSON list of steps, nested for meta/combine steps:
+
+  ```json
+  [{"t": "store"}, {"t": "repeat", "times": 0, "temp": 1e-4,
+    "body": [{"t": "relocate", "k": 2, "how": "crowded"}, {"t": "squeeze_box", "rounds": 25}]}]
+  ```
+
+  `evaluate(recipe, n, budget)` reruns it with new seeds until the budget is spent and offers the
+  best feasible result to the shared store (kept only if Kaggle's metric certifies it and it is
+  shorter). `python -m scripts.swarm tools` prints the table.
+* **Personas** (`wm/swarm/agents.py`): erdos (combinatorial constructions, monotonicity in n),
+  jammer (granular jamming, annealing, lifting), darwin (crossover, recipe mutation), lagrange
+  (penalty methods, shaving slack off stored packings), metropolis (basin hopping), escher (C4
+  symmetry) and bandit (Thompson sampling over the board's recipes, splicing the best). Each has
+  its own recipe grammar and n band; it picks n where the stored packing looks slack next to its
+  neighbours' density, avoids sizes others have claimed, and with some probability builds on a
+  recipe another agent posted (mutating it or splicing its own tail on, citing the parent).
+* **Board** (`wm/swarm/board.py`): one JSON file per post under `$SWARM_BOARD/posts/` (no write
+  contention, works on a shared or synced folder). Post kinds: recipe (with parents and the
+  reasoning), hypothesis (scored open / supported / refuted from results), claim, result, note.
+  `digest.md` summarizes agents, recipe lineage and stats, hypotheses and store wins.
+
+```bash
+# The whole roster, one process each, n <= 300, 90 s per recipe run, for two hours
+SQUARES_BEST_DIR=/shared/best SWARM_BOARD=/shared/swarm \
+  python -m scripts.swarm run --agents erdos,jammer,darwin,lagrange,metropolis:2,escher,bandit:2 \
+  --minutes 120 --max-n 300 --budget 90
+python -m scripts.swarm digest                   # board summary
+python -m scripts.swarm prompt darwin            # brief for a Claude session acting as darwin
+python -m scripts.swarm try --agent me --n 37 --recipe '[{"t":"store"},{"t":"jolt"},{"t":"squeeze_box"}]'
+```
+
+A Claude session can join as an agent: `prompt <persona>` gives it the roster entry, the tool
+table and the `try` / `note` commands, so it reads the same board and posts recipes the
+heuristic agents will pick up and recombine.
+
 ## Next steps
 
 1. **v1: RSSM.** Split the latent into deterministic `h` and stochastic `z` with a KL between

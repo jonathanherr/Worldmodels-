@@ -2,3 +2,4 @@ data/
 runs/
 *.log
 __pycache__/
+swarm_board/

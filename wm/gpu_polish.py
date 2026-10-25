@@ -157,7 +157,7 @@ def polish_round(n, x0, y0, t0, L0, *, device, batch=256, steps=600, shrink=(2e-
     rank = torch.argsort(worst.clamp(min=0) / f + 1e-12 * e)
     best = None
     for b in rank[:top].tolist():
-        xb, yb, tb = (a[b].double().cpu().numpy() for a in (x, y, t))
+        xb, yb, tb = (a[b].cpu().double().numpy() for a in (x, y, t))
         Lb = float(L[b])
         out = finish(xb, yb, tb, Lb, L0)
         if out is None:

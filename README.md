@@ -236,6 +236,38 @@ A Claude session can join as an agent: `prompt <persona>` gives it the roster en
 table and the `try` / `note` commands, so it reads the same board and posts recipes the
 heuristic agents will pick up and recombine.
 
+### Sieve-and-settle (granular deposition)
+
+`wm/sieve.py` treats the squares as rigid grains: soft contacts (the `pack_opt` overlap energy
+times a stiffness), gravity, damping and random kicks, integrated with a velocity cap. Scenarios
+share one integrator and one step budget, so they compare fairly:
+
+- `sieve`: squares wait in a hopper above a mesh plate with holes wider than a square but
+  narrower than its diagonal; the plate is shaken sideways and squares drop through in columns.
+- `cells`: the box starts divided by thin walls into coarse cells; squares settle inside the
+  cells, then the walls thin out and vanish (multiscale settle).
+- `shake`: the control, same hopper and shaking with no mesh or walls.
+- `seeded`: the stored packing, loosened 3%, shaken in a container a little narrower than its side.
+- `-corner` suffix: the container tilted 45 degrees, so the pile falls into a corner.
+
+Every scenario then lowers a lid to the target side while tapping, quenches, and closes the box
+with `compact_squeeze`.
+
+```bash
+SQUARES_BEST_DIR=/mnt/project-files/squares/best \
+  python -m scripts.sieve_squares --n 5-72 --seeds 6 --modes sieve,cells,shake,seeded --out r.jsonl
+python -m scripts.sieve_report r.jsonl
+```
+
+Results (2026-10-25, 4 CPUs): from scratch, `sieve`, `cells` and plain `shake` all settle into
+rows and close at the grid side for almost every n in 5..105. Gravity on a flat floor rewards
+axis-aligned stacking, and the lid cannot reorganize a jammed pile into a tilted structure. The
+mesh's one visible effect is at the smallest n: it is the only from-scratch mode that found the
+known 45-degree packings of n=10 (3.7071) and 17 (4.7071). No from-scratch wins. Seeded shaking
+won 8 n (70, 88, 106, 107, 127, 128, 130, 153; store score -0.0088), all where the stored packing
+was a strip or dropped-square layout with slack. So the sieve metaphor reduces to shaking, and
+shaking is useful only as a polish on an existing packing.
+
 ## Next steps
 
 1. **v1: RSSM.** Split the latent into deterministic `h` and stochastic `z` with a KL between

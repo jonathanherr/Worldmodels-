@@ -225,7 +225,7 @@ different theoretical backgrounds combine into new approaches, coordinating thro
 ```bash
 # The whole roster, one process each, n <= 300, 90 s per recipe run, for two hours
 SQUARES_BEST_DIR=/shared/best SWARM_BOARD=/shared/swarm \
-  python -m scripts.swarm run --agents erdos,jammer,darwin,lagrange,metropolis:2,escher,bandit:2 \
+  python -m scripts.swarm run --agents erdos,jammer,darwin,lagrange,metropolis:2,homotopy:2,escher,bandit:2 \
   --minutes 120 --max-n 300 --budget 90
 python -m scripts.swarm digest                   # board summary
 python -m scripts.swarm prompt darwin            # brief for a Claude session acting as darwin

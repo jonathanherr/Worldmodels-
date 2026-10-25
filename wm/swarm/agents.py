@@ -137,7 +137,8 @@ class Persona:
 def _erdos(rng, n):
     seed = rng.choice([{"t": "tilted", "budget": 15.0}, {"t": "larger", "up": rng.randint(1, 6),
                        "how": rng.choice(["wall", "crowded", "random"])},
-                       {"t": "wrapped"}, {"t": "lattice", "theta": rng.uniform(2, 40)}])
+                       {"t": "wrapped"}, {"t": "lattice", "theta": rng.uniform(2, 40)},
+                       {"t": "compose", "rank": rng.randint(0, 2)}, {"t": "compose", "rank": 0}])
     r = [seed, {"t": "squash", "mu_max": 1e5}, {"t": "squeeze_box", "rounds": 30, "step": 0.002}]
     if rng.random() < 0.5:
         r.append({"t": "repeat", "times": 4, "body": [{"t": "relocate", "k": 1, "how": "wall"},
@@ -169,7 +170,9 @@ def _darwin(rng, n):
 
 
 def _lagrange(rng, n):
-    r = [{"t": "store"}, {"t": "press", "shrink": 1 - 10 ** rng.uniform(-4, -2.3)},
+    kick = rng.choice([{"t": "press", "shrink": 1 - 10 ** rng.uniform(-4, -2.3)},
+                       {"t": "breathe", "frac": rng.uniform(0.1, 0.5), "s_min": rng.uniform(0.6, 0.9)}])
+    r = [{"t": "store"}, kick,
          {"t": "squash", "mu_max": 10 ** rng.uniform(5, 7), "maxiter": rng.choice([400, 1000, 2000])},
          {"t": "squeeze_box", "rounds": 60, "step": 1e-4, "method": rng.choice(["lbfgs", "fire"])}]
     return r, ("Constrained optimization: the stored packing is a KKT point of a relaxed problem only if every "
@@ -179,11 +182,25 @@ def _lagrange(rng, n):
 def _metropolis(rng, n):
     move = rng.choice([{"t": "jolt", "frac": rng.uniform(0.03, 0.2), "sigma": rng.uniform(0.05, 0.4)},
                        {"t": "relocate", "k": rng.randint(1, 3), "how": rng.choice(["random", "crowded", "wall"])},
-                       {"t": "twist", "amp": rng.uniform(0.03, 0.3)}])
+                       {"t": "twist", "amp": rng.uniform(0.03, 0.3)},
+                       {"t": "breathe", "frac": rng.uniform(0.1, 0.4), "s_min": rng.uniform(0.5, 0.9)}])
     r = [{"t": "store"}, {"t": "repeat", "times": 0, "temp": rng.choice([0.0, 1e-4, 5e-4]),
                           "body": [move, {"t": "squeeze_box", "rounds": 25, "step": 0.001}]}]
     return r, (f"Basin hopping: a {move['t']} move followed by a local squeeze samples neighbouring jammed "
                "states; with a small temperature the walk can cross ridges between basins.")
+
+
+def _homotopy(rng, n):
+    seed = rng.choice([{"t": "morph_remove", "steps": rng.randint(4, 12), "how": rng.choice(["wall", "random"])},
+                       {"t": "morph_insert", "steps": rng.randint(4, 12), "hole": rng.randint(0, 3)},
+                       {"t": "morph_remove", "fractional": "no", "how": "wall"}])
+    r = [{"t": "best_of", "k": rng.randint(2, 4), "body": [seed, {"t": "squeeze_box", "rounds": 30, "step": 0.0005}]}]
+    if rng.random() < 0.5:
+        r.append({"t": "repeat", "times": 0, "body": [
+            {"t": "breathe", "frac": rng.uniform(0.1, 0.4), "s_min": rng.uniform(0.5, 0.9)},
+            {"t": "squeeze_box", "rounds": 20, "step": 0.0005}]})
+    return r, ("Continuation: treat n as continuous (one square of fractional size) and follow the optimum from "
+               "a neighbouring n, so the packing deforms instead of being rebuilt.")
 
 
 def _escher(rng, n):
@@ -217,6 +234,10 @@ PERSONAS = {
                           "basin hopping, Monte Carlo moves, tabu-like relocation of rattlers "
                           "into holes", (10, 300), 0.3, _metropolis,
                           "Basin hopping ({summary}) improves n in {lo}-{hi}"),
+    "homotopy": Persona("homotopy", "numerical continuation",
+                        "homotopy in n: grow or shrink one square continuously from the n-1 / n+1 optimum, "
+                        "breathing patches of squares", (10, 400), 0.2, _homotopy,
+                        "Continuation from a neighbouring n ({summary}) beats the store for n in {lo}-{hi}"),
     "escher": Persona("escher", "symmetry and group theory",
                       "packings invariant under C4 or mirror subgroups; symmetric seeds and "
                       "twist fields", (5, 80), 0.2, _escher,

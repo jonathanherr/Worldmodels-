@@ -263,6 +263,94 @@ def symmetric(ctx, state, loose=1.2):
     return p
 
 
+# ----------------------------------------------------------------------------- morphs (wm.morph)
+
+_SIDES = {"t": 0.0, "root": None, "sides": None, "src": None}
+
+
+def _monotone_sides(ctx, ttl: float = 300.0):
+    """Store sides made nondecreasing in n (a packing of m >= n with squares dropped packs n),
+    and for each n the m whose packing gives that side. Cached for a few minutes."""
+    c = _SIDES
+    if c["sides"] is None or c["root"] != ctx.store_root or time.time() - c["t"] > ttl:
+        N = best_store.MAX_N
+        raw = np.array([0.0] + [best_store.best_side(n, ctx.store_root) for n in range(1, N + 1)])
+        src = np.arange(N + 1)
+        for n in range(N - 1, 0, -1):
+            if raw[src[n + 1]] < raw[src[n]]:
+                src[n] = src[n + 1]
+        c.update(t=time.time(), root=ctx.store_root, sides=raw[src], src=src)
+    return c["sides"], c["src"]
+
+
+def _stored(ctx, m):
+    """Stored packing of m (grid if none) as a Packing in [0, L]^2."""
+    xyd = best_store.load_xyd(m, ctx.store_root)
+    return from_xyd(*xyd) if xyd else grid(Ctx(m, ctx.rng), None)
+
+
+@tool("construct", "2x2 sub-divided packing: stored a and b in opposite corners, the two a x b rectangles "
+      "filled with a grid or a smaller stored packing; the smallest such box holding n (extras dropped).",
+      rank=(0, 0, 4))
+def compose(ctx, state, rank=0):
+    from .. import morph
+    sides, src = _monotone_sides(ctx)
+    N = len(sides) - 1
+    cands = []
+    for a in range(1, ctx.n):
+        for b in range(a, ctx.n - a + 1):
+            S = sides[a] + sides[b] + morph.BLOCK_GAP
+            if S >= sides[ctx.n] + 0.5:
+                break
+            k = a + b + 2 * morph.rect_count(sides[a], sides[b], sides)
+            if k >= ctx.n:
+                cands.append((S, a, b))
+                break  # larger b only grows S
+    if not cands:
+        return store(ctx, None)
+    cands.sort()
+    _, a, b = cands[min(int(rank), len(cands) - 1)]
+
+    def packings(m):
+        p = _stored(ctx, int(src[m]))
+        return p.x[:m], p.y[:m], p.t[:m], p.L
+
+    x, y, t, S = morph.compose_2x2(a, b, sides, packings)
+    return fit_count(Packing(x, y, t, S), ctx.n, ctx.rng, "wall")
+
+
+@tool("construct", "Fractional removal: shrink one square of the stored n+1 packing from size 1 to 0 with the box "
+      "free, so the rest flows into the space (else the abrupt drop-and-recompress).",
+      steps=(8, 2, 20), how=("wall", ["wall", "random"]), fractional=("yes", ["yes", "no"]))
+def morph_remove(ctx, state, steps=8, how="wall", fractional="yes"):
+    from .. import morph
+    if ctx.n >= best_store.MAX_N:
+        return store(ctx, None)
+    p = _stored(ctx, ctx.n + 1)
+    cands = morph.removal_candidates(p.x, p.y, p.t, p.L, k=8, rng=ctx.rng)
+    r = int(cands[int(ctx.rng.integers(0, 4))] if how == "wall" else ctx.rng.choice(cands))
+    if fractional == "yes":
+        out = morph.remove_fractional(p.x, p.y, p.t, p.L, r, steps=int(steps), rng=ctx.rng)
+    else:
+        out = morph.remove_abrupt(p.x, p.y, p.t, p.L, r)
+    return store(ctx, None) if out is None else Packing(*out)
+
+
+@tool("construct", "Fractional insertion: put a small square in one of the roomiest holes of the stored n-1 "
+      "packing and grow it to size 1 with the box free.", steps=(8, 2, 20), hole=(0, 0, 3))
+def morph_insert(ctx, state, steps=8, hole=0):
+    from .. import morph
+    if ctx.n < 2:
+        return grid(ctx, None)
+    p = _stored(ctx, ctx.n - 1)
+    hs = morph.holes(p.x, p.y, p.t, p.L, k=4)
+    if not hs:
+        return store(ctx, None)
+    out = morph.insert_fractional(p.x, p.y, p.t, p.L, hs[min(int(hole), len(hs) - 1)], steps=int(steps),
+                                  angle=float(ctx.rng.uniform(-np.pi / 4, np.pi / 4)))
+    return store(ctx, None) if out is None else Packing(*out)
+
+
 # ----------------------------------------------------------------------------- perturb
 
 
@@ -307,6 +395,15 @@ def heat(ctx, state, temp=0.05):
     p.y += ctx.rng.normal(0, temp, p.n)
     p.t += ctx.rng.normal(0, temp, p.n)
     return p
+
+
+@tool("perturb", "Breathe: shrink a patch of neighbouring squares to size s_min, compact with the box free so the "
+      "rest flows in, then grow them back (changes the packing's shape, not just its scale).",
+      frac=(0.3, 0.05, 0.7), s_min=(0.7, 0.3, 0.95), steps=(6, 2, 12))
+def breathe(ctx, state, frac=0.3, s_min=0.7, steps=6):
+    from .. import morph
+    out = morph.breathe(state.x, state.y, state.t, state.L, ctx.rng, frac=frac, s_min=s_min, steps=int(steps))
+    return state if out is None else Packing(*out)
 
 
 # ----------------------------------------------------------------------------- relax

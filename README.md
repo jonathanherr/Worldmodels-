@@ -236,6 +236,43 @@ A Claude session can join as an agent: `prompt <persona>` gives it the roster en
 table and the `try` / `note` commands, so it reads the same board and posts recipes the
 heuristic agents will pick up and recombine.
 
+### Game-of-Life rules: squares that only see their neighbours
+
+`wm/life.py` moves every square synchronously from its own neighbourhood only (contacts,
+gaps, relative angles, a nearby wall) while the box closes in. A rule is 16 coefficients for
+fixed local terms (repel, cohesion across gaps, align / anti-align, rolling torque, face
+sliding, spacing, axis preference, wall pull, cooling noise) plus the schedule (melt, shrink
+rate, overlap tolerance, momentum). The same rule runs at any n.
+
+`wm/life_evolve.py` has six inventors, each a theory of what a square should do (granular
+jamming, crystal growth, surface tension, tilted domains, even spacing, and an open one with
+every term free). CMA-ES tunes each inventor's terms on several n at once, the rule is scored
+on held-out n, and results go to `rules/life_rules.json`. The swarm gets a `life` tool and a
+`conway` persona that use the library.
+
+```bash
+SQUARES_BEST_DIR=/shared/best python -m scripts.life_squares tournament --mode drop \
+    --train 39,51,66,83,103,108 --held 123,146,147,151,171,172 --gens 20 --offer
+python -m scripts.life_squares tournament --mode random --steps 2000 \
+    --train 20,30,40,55,70,90 --held 25,35,48,62,80,100
+python -m scripts.life_squares sweep --n 5-1000 --mode drop --seeds 0,1,2 --offer
+```
+
+Results (2026-10-25, side ratio to the store, lower is better, held-out n):
+
+| start | squeeze finish only | best evolved rule | store wins |
+| --- | --- | --- | --- |
+| stored packing (`store`) | 1.0003 | 1.0002 (every inventor learns to do nothing) | 0 |
+| n+1 packing minus a square (`drop`) | 1.0004 | 1.0005 (tilt, granular) | 0 |
+| random gas (`random`) | 1.197 | 1.059 (open) | 0 |
+
+From a random gas, local rules alone build packings much closer to the best known than the
+penalty-compaction baseline (they cut that gap by about 70%), and every evolved rule pushes
+squares toward the box axes, i.e. they rediscover the grid. From stored packings they cannot
+reorganize: a stored packing is jammed, and a rule that perturbs enough to escape loses more
+than it gains, so evolution converges on leaving it alone. Beating the constructions would
+need non-local moves (whole rows or strips sliding) that a neighbourhood rule cannot express.
+
 ## Next steps
 
 1. **v1: RSSM.** Split the latent into deterministic `h` and stochastic `z` with a KL between

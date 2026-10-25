@@ -1,0 +1,554 @@
+[
+ {
+  "name": "granular-drop-s0",
+  "inventor": "granular",
+  "theory": "Grains under slow compression jam into dense states; off-center contacts make grains roll, and thermal noise that cools lets a jam unjam into a denser one.",
+  "parent": null,
+  "mode": "drop",
+  "train": [
+   39,
+   51,
+   66,
+   83,
+   103,
+   108
+  ],
+  "fitness": 1.0001811124080127,
+  "held_out": {
+   "mean": 1.0005135074001978,
+   "ratios": {
+    "123": 1.0004931958364451,
+    "146": 1.000514702197957,
+    "147": 1.0005060996529866,
+    "151": 1.000529039772908,
+    "171": 1.000514702197959,
+    "172": 1.0005233047429305
+   }
+  },
+  "rule": {
+   "rep": 1.3471395961561934,
+   "coh": 0.0,
+   "coh_range": 0.1,
+   "align": 0.0,
+   "roll": 0.5901131437573901,
+   "slide": 0.0,
+   "space": 0.0,
+   "space_r": 1.2,
+   "axis": 0.0,
+   "wall": 0.0,
+   "noise": 1.6894980937812167e-05,
+   "noise_decay": 9.874689809843833,
+   "melt": 0.07264750051418531,
+   "shrink": 3.029173195916844e-05,
+   "tol": 0.00686821229847564,
+   "momentum": 0.8298885026963543
+  },
+  "made": "2026-10-25T17:13:09Z"
+ },
+ {
+  "name": "crystal-drop-s0",
+  "inventor": "crystal",
+  "theory": "Dense packings are locally crystalline: squares should turn to match their neighbours and slide along shared faces into columns, so domains grow and grain boundaries carry the slack.",
+  "parent": null,
+  "mode": "drop",
+  "train": [
+   39,
+   51,
+   66,
+   83,
+   103,
+   108
+  ],
+  "fitness": 1.000207116935447,
+  "held_out": {
+   "mean": 1.0053576199225782,
+   "ratios": {
+    "123": 1.000536424057134,
+    "146": 1.001406314971713,
+    "147": 1.0005032879630495,
+    "151": 1.0005456554664243,
+    "171": 1.0256804651214952,
+    "172": 1.003473571955653
+   }
+  },
+  "rule": {
+   "rep": 0.20627644869708794,
+   "coh": 0.0,
+   "coh_range": 0.1,
+   "align": 0.0035794438449739258,
+   "roll": 0.0,
+   "slide": -0.04504394983359455,
+   "space": 0.0,
+   "space_r": 1.2,
+   "axis": 0.04893250552682582,
+   "wall": 0.0,
+   "noise": 0.0,
+   "noise_decay": 3.0,
+   "melt": 0.01253981928150607,
+   "shrink": 0.0016291282573106065,
+   "tol": 0.006528463320849345,
+   "momentum": 0.09047758276066864
+  },
+  "made": "2026-10-25T17:15:23Z"
+ },
+ {
+  "name": "tension-drop-s0",
+  "inventor": "tension",
+  "theory": "Surface tension: squares are drawn across small gaps to neighbours and walls, so slack collects into one hole that the box squeezes out.",
+  "parent": null,
+  "mode": "drop",
+  "train": [
+   39,
+   51,
+   66,
+   83,
+   103,
+   108
+  ],
+  "fitness": 1.000186180476584,
+  "held_out": {
+   "mean": 1.005458501048327,
+   "ratios": {
+    "123": 1.0089925575044236,
+    "146": 1.003291054754188,
+    "147": 1.0049230649251317,
+    "151": 1.00429543698812,
+    "171": 1.0059686288155987,
+    "172": 1.0052802633024998
+   }
+  },
+  "rule": {
+   "rep": 0.22173629268521178,
+   "coh": -0.06303195798158479,
+   "coh_range": 0.013627217501449976,
+   "align": 0.0,
+   "roll": 0.0,
+   "slide": 0.0,
+   "space": 0.0,
+   "space_r": 1.2,
+   "axis": 0.0,
+   "wall": 0.04938804397865901,
+   "noise": 0.0,
+   "noise_decay": 3.0,
+   "melt": 0.04136542847067501,
+   "shrink": 0.00025423175321545886,
+   "tol": 0.02559551409880147,
+   "momentum": 0.18152952474513193
+  },
+  "made": "2026-10-25T17:17:37Z"
+ },
+ {
+  "name": "tilt-drop-s0",
+  "inventor": "tilt",
+  "theory": "The best known packings mix axis-aligned blocks with tilted strips; squares near crowded walls should turn away from their neighbours (anti-align) and toward 45 deg so tilted bands can form.",
+  "parent": null,
+  "mode": "drop",
+  "train": [
+   39,
+   51,
+   66,
+   83,
+   103,
+   108
+  ],
+  "fitness": 1.0001987699131292,
+  "held_out": {
+   "mean": 1.0005001941437301,
+   "ratios": {
+    "123": 1.000500194144493,
+    "146": 1.0005001941435767,
+    "147": 1.0005001941435774,
+    "151": 1.0005001941435772,
+    "171": 1.000500194143578,
+    "172": 1.0005001941435787
+   }
+  },
+  "rule": {
+   "rep": 0.14453081187824512,
+   "coh": 0.0,
+   "coh_range": 0.1,
+   "align": 0.0020790029998247472,
+   "roll": 0.899178742878741,
+   "slide": 0.0,
+   "space": 0.0,
+   "space_r": 1.2,
+   "axis": 0.03558464458708664,
+   "wall": 0.0,
+   "noise": 0.0,
+   "noise_decay": 3.0,
+   "melt": 0.053755001293837035,
+   "shrink": 1.715048217088694e-05,
+   "tol": 0.005258938815609175,
+   "momentum": 0.08292226660410357
+  },
+  "made": "2026-10-25T17:19:24Z"
+ },
+ {
+  "name": "spacer-drop-s0",
+  "inventor": "spacer",
+  "theory": "Holes are the enemy: a soft center-center repulsion spreads squares evenly, so no region is starved while another is jammed; noise breaks ties.",
+  "parent": null,
+  "mode": "drop",
+  "train": [
+   39,
+   51,
+   66,
+   83,
+   103,
+   108
+  ],
+  "fitness": 1.000183268366374,
+  "held_out": {
+   "mean": 1.0008444650291957,
+   "ratios": {
+    "123": 1.000536470281956,
+    "146": 1.0008467798061944,
+    "147": 1.0009067398820564,
+    "151": 1.0009865021690647,
+    "171": 1.0008107129481236,
+    "172": 1.0009795850877792
+   }
+  },
+  "rule": {
+   "rep": 1.7214354960512508,
+   "coh": 0.0,
+   "coh_range": 0.1,
+   "align": 0.0,
+   "roll": 0.0,
+   "slide": 0.0,
+   "space": 0.0057533055789728066,
+   "space_r": 1.5587071279574003,
+   "axis": 0.0,
+   "wall": 0.0,
+   "noise": 0.0007749320398195148,
+   "noise_decay": 9.256807572304243,
+   "melt": 0.006879607194587259,
+   "shrink": 7.849053443425442e-05,
+   "tol": 0.010076641213564271,
+   "momentum": 0.49378143479917525
+  },
+  "made": "2026-10-25T17:21:39Z"
+ },
+ {
+  "name": "open-drop-s0",
+  "inventor": "open",
+  "theory": "No theory: every term is free and evolution decides.",
+  "parent": null,
+  "mode": "drop",
+  "train": [
+   39,
+   51,
+   66,
+   83,
+   103,
+   108
+  ],
+  "fitness": 1.0162437637377664,
+  "held_out": {
+   "mean": 1.0647080434292084,
+   "ratios": {
+    "123": 1.115772008103369,
+    "146": 1.0467778460463213,
+    "147": 1.0514937992095414,
+    "151": 1.087328688097066,
+    "171": 1.048871769729947,
+    "172": 1.0380041493890058
+   }
+  },
+  "rule": {
+   "rep": 1.0578332129486372,
+   "coh": -0.1224514005843481,
+   "coh_range": 0.19578926566336055,
+   "align": 0.0004356386671481999,
+   "roll": -0.7288071546393675,
+   "slide": -0.026377305147069558,
+   "space": 0.00010814415408041401,
+   "space_r": 1.0680930755834759,
+   "axis": 0.027892910110800542,
+   "wall": 0.07492330157186958,
+   "noise": 0.00017538525036605858,
+   "noise_decay": 4.406751247855264,
+   "melt": 0.03497520424017842,
+   "shrink": 0.00014376725959995985,
+   "tol": 0.016100497596147224,
+   "momentum": 0.46887888944143175
+  },
+  "made": "2026-10-25T17:23:57Z"
+ },
+ {
+  "name": "granular-random-s0",
+  "inventor": "granular",
+  "theory": "Grains under slow compression jam into dense states; off-center contacts make grains roll, and thermal noise that cools lets a jam unjam into a denser one.",
+  "parent": null,
+  "mode": "random",
+  "train": [
+   20,
+   30,
+   40,
+   55,
+   70,
+   90
+  ],
+  "fitness": 1.0208401863063512,
+  "held_out": {
+   "mean": 1.0980029308820212,
+   "ratios": {
+    "25": 1.000000093968643,
+    "35": 1.1279963227178706,
+    "48": 1.1313281851588426,
+    "62": 1.0927986721298109,
+    "80": 1.1118985995051525,
+    "100": 1.123995711811808
+   }
+  },
+  "rule": {
+   "rep": 1.2888189177429696,
+   "coh": 0.0,
+   "coh_range": 0.1,
+   "align": 0.0,
+   "roll": -0.0021426238453149393,
+   "slide": 0.0,
+   "space": 0.0,
+   "space_r": 1.2,
+   "axis": 0.0,
+   "wall": 0.0,
+   "noise": 0.001136987922655594,
+   "noise_decay": 1.5137294069055218,
+   "melt": 0.06298684483721335,
+   "shrink": 0.0015851750303011688,
+   "tol": 0.0943315236042812,
+   "momentum": 0.8338820207890597
+  },
+  "made": "2026-10-25T17:26:28Z"
+ },
+ {
+  "name": "crystal-random-s0",
+  "inventor": "crystal",
+  "theory": "Dense packings are locally crystalline: squares should turn to match their neighbours and slide along shared faces into columns, so domains grow and grain boundaries carry the slack.",
+  "parent": null,
+  "mode": "random",
+  "train": [
+   20,
+   30,
+   40,
+   55,
+   70,
+   90
+  ],
+  "fitness": 1.0058202823945854,
+  "held_out": {
+   "mean": 1.131891936303157,
+   "ratios": {
+    "25": 1.1422281483748615,
+    "35": 1.1666880182543324,
+    "48": 1.1432387225045384,
+    "62": 1.1260889304986696,
+    "80": 1.112300953402424,
+    "100": 1.1008068447841155
+   }
+  },
+  "rule": {
+   "rep": 1.556533455934409,
+   "coh": 0.0,
+   "coh_range": 0.1,
+   "align": -0.01133582781609857,
+   "roll": 0.0,
+   "slide": 0.0058897119089922345,
+   "space": 0.0,
+   "space_r": 1.2,
+   "axis": 0.044924718977210426,
+   "wall": 0.0,
+   "noise": 0.0,
+   "noise_decay": 3.0,
+   "melt": 0.06709290879158866,
+   "shrink": 0.0002736505178654272,
+   "tol": 0.09758502028864577,
+   "momentum": 0.5845813594017396
+  },
+  "made": "2026-10-25T17:28:22Z"
+ },
+ {
+  "name": "tension-random-s0",
+  "inventor": "tension",
+  "theory": "Surface tension: squares are drawn across small gaps to neighbours and walls, so slack collects into one hole that the box squeezes out.",
+  "parent": null,
+  "mode": "random",
+  "train": [
+   20,
+   30,
+   40,
+   55,
+   70,
+   90
+  ],
+  "fitness": 1.025495048318069,
+  "held_out": {
+   "mean": 1.1318998247194203,
+   "ratios": {
+    "25": 1.1620093279014472,
+    "35": 1.1155955451466857,
+    "48": 1.1345130279399824,
+    "62": 1.1210388789123436,
+    "80": 1.125457827775638,
+    "100": 1.1327843406404239
+   }
+  },
+  "rule": {
+   "rep": 1.3453007959028203,
+   "coh": -0.08682803616087452,
+   "coh_range": 0.01046979196654755,
+   "align": 0.0,
+   "roll": 0.0,
+   "slide": 0.0,
+   "space": 0.0,
+   "space_r": 1.2,
+   "axis": 0.0,
+   "wall": 0.06656266037561395,
+   "noise": 0.0,
+   "noise_decay": 3.0,
+   "melt": 0.06348446926156076,
+   "shrink": 0.0005194038357396338,
+   "tol": 0.08891160378579337,
+   "momentum": 0.9214333616035605
+  },
+  "made": "2026-10-25T17:30:19Z"
+ },
+ {
+  "name": "tilt-random-s0",
+  "inventor": "tilt",
+  "theory": "The best known packings mix axis-aligned blocks with tilted strips; squares near crowded walls should turn away from their neighbours (anti-align) and toward 45 deg so tilted bands can form.",
+  "parent": null,
+  "mode": "random",
+  "train": [
+   20,
+   30,
+   40,
+   55,
+   70,
+   90
+  ],
+  "fitness": 1.004598267534327,
+  "held_out": {
+   "mean": 1.1411718612954316,
+   "ratios": {
+    "25": 1.2000245559449008,
+    "35": 1.166687699088444,
+    "48": 1.1428603445206336,
+    "62": 1.1252661223126208,
+    "80": 1.1116668572144346,
+    "100": 1.100550144636458
+   }
+  },
+  "rule": {
+   "rep": 1.5861949221114766,
+   "coh": 0.0,
+   "coh_range": 0.1,
+   "align": 0.09147598670992071,
+   "roll": -0.9976405869245969,
+   "slide": 0.0,
+   "space": 0.0,
+   "space_r": 1.2,
+   "axis": 0.0470609389661449,
+   "wall": 0.0,
+   "noise": 0.0,
+   "noise_decay": 3.0,
+   "melt": 0.002569112166641503,
+   "shrink": 0.00024088675405666208,
+   "tol": 0.08590426343733805,
+   "momentum": 0.8332189097491163
+  },
+  "made": "2026-10-25T17:32:06Z"
+ },
+ {
+  "name": "spacer-random-s0",
+  "inventor": "spacer",
+  "theory": "Holes are the enemy: a soft center-center repulsion spreads squares evenly, so no region is starved while another is jammed; noise breaks ties.",
+  "parent": null,
+  "mode": "random",
+  "train": [
+   20,
+   30,
+   40,
+   55,
+   70,
+   90
+  ],
+  "fitness": 1.0211065528937777,
+  "held_out": {
+   "mean": 1.1241558383683588,
+   "ratios": {
+    "25": 1.1424706597296206,
+    "35": 1.1309858443238292,
+    "48": 1.1280176234608263,
+    "62": 1.1052380915598523,
+    "80": 1.121297751786444,
+    "100": 1.1169250593495792
+   }
+  },
+  "rule": {
+   "rep": 0.7705600172941702,
+   "coh": 0.0,
+   "coh_range": 0.1,
+   "align": 0.0,
+   "roll": 0.0,
+   "slide": 0.0,
+   "space": 0.002804087763233293,
+   "space_r": 1.461418553375659,
+   "axis": 0.0,
+   "wall": 0.0,
+   "noise": 0.04338766862626242,
+   "noise_decay": 6.255069730594616,
+   "melt": 3.20048161571318e-05,
+   "shrink": 0.0019541322674810793,
+   "tol": 0.09367691042958656,
+   "momentum": 0.8770384110049071
+  },
+  "made": "2026-10-25T17:34:15Z"
+ },
+ {
+  "name": "open-random-s0",
+  "inventor": "open",
+  "theory": "No theory: every term is free and evolution decides.",
+  "parent": null,
+  "mode": "random",
+  "train": [
+   20,
+   30,
+   40,
+   55,
+   70,
+   90
+  ],
+  "fitness": 1.0046297693237822,
+  "held_out": {
+   "mean": 1.058800631469117,
+   "ratios": {
+    "25": 1.1414321607345723,
+    "35": 1.000464577660097,
+    "48": 1.0004077331166576,
+    "62": 1.000265632792746,
+    "80": 1.1101403072398575,
+    "100": 1.100093377270771
+   }
+  },
+  "rule": {
+   "rep": 1.7172926792299106,
+   "coh": -0.10653180700832612,
+   "coh_range": 0.013960970137072981,
+   "align": 0.0005686838102053199,
+   "roll": -0.6446234354551683,
+   "slide": 0.04179737154401736,
+   "space": 3.839837983782846e-05,
+   "space_r": 1.0521348306573068,
+   "axis": 0.01713156247116858,
+   "wall": 0.05778784280216051,
+   "noise": 3.345015796730466e-05,
+   "noise_decay": 2.529432977193511,
+   "melt": 0.01639118915969358,
+   "shrink": 0.0005875831986568965,
+   "tol": 0.090100905325397,
+   "momentum": 0.726652021883721
+  },
+  "made": "2026-10-25T17:36:06Z"
+ }
+]

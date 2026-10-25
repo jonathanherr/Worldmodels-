@@ -448,6 +448,17 @@ def lift(ctx, state, maxiter=300):
     return Packing(x, y, t, L)
 
 
+@tool("relax", "Game-of-Life rule: every square moves only from its neighbours' state while the box shrinks "
+      "(rule = an inventor's best evolved rule from the library, see wm.life_evolve).",
+      rule=("open", ["granular", "crystal", "tension", "tilt", "spacer", "open"]), steps=(600, 100, 3000))
+def life(ctx, state, rule="open", steps=600):
+    from ..life import run_rule
+    from ..life_evolve import library_rule
+    x, y, t, L = run_rule(library_rule(rule), state.x, state.y, state.t, state.L, steps=int(steps),
+                          seed=int(ctx.rng.integers(1 << 30)))
+    return Packing(x, y, t, L)
+
+
 # ----------------------------------------------------------------------------- combine
 
 

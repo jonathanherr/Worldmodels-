@@ -213,6 +213,15 @@ def _escher(rng, n):
                "turn; seeding inside that subgroup shrinks the search space by four.")
 
 
+def _conway(rng, n):
+    rule = rng.choice(["granular", "crystal", "tension", "tilt", "spacer", "open"])
+    seed = rng.choice([{"t": "store"}, {"t": "random", "loose": rng.uniform(1.15, 1.4)}, {"t": "larger", "up": 1}])
+    r = [seed, {"t": "life", "rule": rule, "steps": rng.choice([400, 800, 1600])},
+         {"t": "squash", "mu_max": 1e5}, {"t": "squeeze_box", "rounds": 30, "step": 0.002}]
+    return r, (f"Local rules: let every square react only to its neighbours under the evolved '{rule}' rule "
+               "while the walls close in; structure that emerges this way works at any n.")
+
+
 PERSONAS = {
     "erdos": Persona("erdos", "combinatorial constructions",
                      "Erdos-Graham leaning strips, Goebel and Friedman families, monotonicity in n "
@@ -242,6 +251,11 @@ PERSONAS = {
                       "packings invariant under C4 or mirror subgroups; symmetric seeds and "
                       "twist fields", (5, 80), 0.2, _escher,
                       "C4-symmetric seeds ({summary}) reach new basins for n in {lo}-{hi}"),
+    "conway": Persona("conway", "cellular automata",
+                      "Game-of-Life style local rules: each square updates from its neighbours' contacts, "
+                      "gaps and angles only; rules are evolved across many n (wm.life_evolve)",
+                      (5, 400), 0.2, _conway,
+                      "Neighbour rules ({summary}) reach denser packings for n in {lo}-{hi}"),
     "bandit": Persona("bandit", "reinforcement learning",
                       "multi-armed bandits: Thompson sampling over the board's recipes by n band, "
                       "splicing the best arms together", (5, 400), 1.0, None,

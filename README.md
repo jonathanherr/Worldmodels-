@@ -236,6 +236,29 @@ A Claude session can join as an agent: `prompt <persona>` gives it the roster en
 table and the `try` / `note` commands, so it reads the same board and posts recipes the
 heuristic agents will pick up and recombine.
 
+### Number theory: which relations between n transfer
+
+`scripts/number_theory_squares.py` asks whether primes, parity, divisibility or factorization
+predict how well n packs, once position between consecutive squares is controlled for
+(n = k^2 + d, u = d / (2k + 1)). Findings on the shared store (2026-10-25):
+
+* Position is everything. Every n with u < 0.4 beats the grid; above u = 0.5 almost nothing does.
+* Prime, even, 4 | n, 3 | n, squarefree, many divisors: residual differences of at most 0.0005
+  in score, none significant (prime p = 0.1, the rest p > 0.4). "2 and 4 are similar" holds only
+  as s(4m) <= 2 s(m), which never beats the store: small packings waste too much.
+* Relations that do transfer are geometric: fixed offset d across k (wrap an L of 2k + 1
+  squares, so s((k+1)^2 + d) <= s(k^2 + d) + 1), dropping squares (s monotone), and 2x2
+  compositions. `compose_squares --offer` enforces all three; rerun it after any win.
+* Tiling j x j copies of an m-packing never wins, and no square packing with m <= 200 is denser
+  per unit length than grid columns, so repeating small packings along a strip cannot help.
+
+`wm/strips.py` adds the one family that does win in the grid-only zone: Erdos-Graham style tilted
+columns at any angle (not just 45 degrees) in a top band and a right band around an axis-aligned
+grid block. Columns of r + 1 squares tilted by theta fill a band r + delta high at density
+(r + 1) cos(theta) per unit width, which beats the grid once delta exceeds about sqrt(2 / r), so
+it only pays at large k. `python -m scripts.strip_squares --offer` won 133 n in 70-994 (store
+23.381 -> 23.304 with the compose cascade), pushing the beats-grid frontier from u ~ 0.45 to ~ 0.5.
+
 ## Next steps
 
 1. **v1: RSSM.** Split the latent into deterministic `h` and stochastic `z` with a KL between

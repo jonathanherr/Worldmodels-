@@ -1,0 +1,195 @@
+"""Program search: agents write small Python programs that rebuild one window of a record packing.
+
+The open problem "pack n squares better" is cut down to one fixed, scoreable task:
+
+* A task names one or more n (a family that shares the same structure, such as the diagonal-strip
+  packings 299, 335, 412), a corner of the box and a window size. The record packing for each n is
+  loaded; the k squares whose centres lie in the size x size window at that corner are the
+  program's to rearrange, everything else stays where it is.
+* A program is a file defining `build(ctx) -> list of (x, y, angle_deg)` with exactly ctx["k"]
+  entries. ctx is given in window-local coordinates: the corner is (0, 0), the two box walls that
+  meet there are x = 0 and y = 0, and the window is [0, size]^2. ctx also lists the frozen
+  neighbours around the window, the record's own window layout and the box side. The helper
+  library `wm.progsearch_lib` (blocks, rows, rotations, overlap check) is importable.
+* The program runs in a subprocess with a CPU limit. Its squares are mapped back into the box
+  next to the frozen ones and the whole packing goes through `pack_opt.squeeze` starting at the
+  record side, with every square free. The score per n is record side - final side (positive is
+  a win; the record layout itself scores about 0). A program only has to be roughly right: the
+  squeeze takes care of the last 1e-9.
+* Programs and their scores live on a board directory ($PROGSEARCH_BOARD) as plain files, so
+  several agents (Claude sessions) can read the leaderboard, copy the best programs and post
+  mutations.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+from . import best_store
+from .pack_opt import MARGIN, feasible, squeeze
+
+REPO = Path(__file__).resolve().parent.parent
+SEED_DIR = Path(os.environ.get("PROGSEARCH_SEEDS", "/mnt/project-files/squares/public-certs/store"))
+BOARD = Path(os.environ.get("PROGSEARCH_BOARD", "/mnt/project-files/squares/progsearch"))
+
+# Kaggle per-puzzle bests that beat the public records (Couzo upper_bounds.json, "reported").
+TARGETS = {147: 12.651043553627, 299: 17.802718854399, 335: 18.794904187687, 412: 20.798165581954}
+
+TASKS = {
+    # Warm-up with a known answer: 147 is the 148 record minus its top-right corner square.
+    "corner147": {"ns": [147], "corner": "tr", "size": 4.0,
+                  "goal": "The window holds the empty corner cell left by removing square 148. "
+                          "Use that hole: rearrange the corner so the whole packing can shrink."},
+    # The diagonal-strip family: the strip ends hold about 6.7 of 335's 19.3 units of empty area.
+    "strip-bl": {"ns": [299, 335, 412], "corner": "bl", "size": 4.0,
+                 "goal": "The window is where the tilted two-wide strip meets the bottom-left corner. "
+                         "Rebuild this strip end with less wasted area."},
+    "strip-tr": {"ns": [299, 335, 412], "corner": "tr", "size": 4.0,
+                 "goal": "The window is where the tilted two-wide strip meets the top-right corner. "
+                         "Rebuild this strip end with less wasted area."},
+}
+
+
+def load_seed(n: int, seed_dir: Path = SEED_DIR):
+    e = json.loads((Path(seed_dir) / f"n{n:04d}.json").read_text())
+    x, y, t = (np.array([float(v) for v in e[k]]) for k in ("x", "y", "angle"))
+    return x, y, t, float(e["side"])
+
+
+# Window-local frame: reflect so the chosen corner is the origin and the window is [0, size]^2.
+def _flip(corner: str) -> tuple[bool, bool]:
+    return corner in ("tr", "br"), corner in ("tr", "tl")
+
+
+def to_local(x, y, deg, L, corner):
+    fx, fy = _flip(corner)
+    lx = L - x if fx else x
+    ly = L - y if fy else y
+    ld = -deg if fx != fy else deg  # one reflection reverses the sense of rotation
+    return lx, ly, ld
+
+
+def to_global(lx, ly, ld, L, corner):
+    return to_local(lx, ly, ld, L, corner)  # the reflection is its own inverse
+
+
+def make_ctx(n: int, corner: str, size: float, seed_dir: Path = SEED_DIR, goal: str = "") -> dict:
+    x, y, t, L = load_seed(n, seed_dir)
+    lx, ly, ld = to_local(x, y, np.degrees(t), L, corner)
+    inside = (lx < size) & (ly < size)
+    near = ~inside & (lx < size + 2.0) & (ly < size + 2.0)
+    sq = lambda m: [[round(float(a), 9), round(float(b), 9), round(float(c) % 90.0, 6)]
+                    for a, b, c in zip(lx[m], ly[m], ld[m])]
+    return {"n": n, "corner": corner, "size": size, "side": L, "k": int(inside.sum()),
+            "target_side": TARGETS.get(n), "goal": goal,
+            "original": sq(inside), "frozen": sq(near), "_inside": inside.tolist()}
+
+
+RUNNER = r"""
+import importlib.util, json, resource, sys
+cpu = int(sys.argv[3])
+resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu + 1))
+resource.setrlimit(resource.RLIMIT_AS, (2 << 30, 2 << 30))
+sys.path.insert(0, sys.argv[4])
+spec = importlib.util.spec_from_file_location("prog", sys.argv[1])
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+ctx = json.load(open(sys.argv[2]))
+out = [[float(a), float(b), float(c)] for a, b, c in mod.build(ctx)]
+print("RESULT" + json.dumps(out))
+"""
+
+
+def run_program(path: Path, ctx: dict, cpu_seconds: int = 60) -> list:
+    """Run build(ctx) from the program file in a subprocess; returns its (x, y, deg) list."""
+    tmp = Path(os.environ.get("TMPDIR", "/tmp")) / f"progsearch_ctx_{os.getpid()}_{ctx['n']}.json"
+    tmp.write_text(json.dumps({k: v for k, v in ctx.items() if not k.startswith("_")}))
+    try:
+        p = subprocess.run([sys.executable, "-I", "-c", RUNNER, str(Path(path).resolve()), str(tmp), str(cpu_seconds), str(REPO)],
+                           capture_output=True, text=True, timeout=cpu_seconds * 2 + 10, cwd=tmp.parent)
+    finally:
+        tmp.unlink(missing_ok=True)
+    line = next((s for s in p.stdout.splitlines() if s.startswith("RESULT")), None)
+    if line is None:
+        raise RuntimeError((p.stderr or p.stdout).strip()[-2000:] or f"exit code {p.returncode}")
+    return json.loads(line[6:])
+
+
+def assemble(ctx: dict, squares: list, seed_dir: Path = SEED_DIR):
+    """Global x, y, t (radians) with the window replaced by the program's squares."""
+    if len(squares) != ctx["k"]:
+        raise ValueError(f"build() returned {len(squares)} squares, the window needs exactly {ctx['k']}")
+    x, y, t, L = load_seed(ctx["n"], seed_dir)
+    keep = ~np.array(ctx["_inside"])
+    a = np.array(squares, dtype=float)
+    gx, gy, gd = to_global(a[:, 0], a[:, 1], a[:, 2], L, ctx["corner"])
+    return (np.concatenate([x[keep], gx]), np.concatenate([y[keep], gy]),
+            np.concatenate([t[keep], np.radians(gd)]), L)
+
+
+def score_layout(x, y, t, L0, rounds: int = 60) -> dict:
+    """Squeeze the assembled packing from the record side; returns the side it reaches."""
+    out = squeeze(x, y, t, L0, rounds=rounds, step=2e-4, min_step=1e-9, maxiter=4000)
+    if out is None:
+        return {"ok": False, "side": math.inf, "gain": -math.inf}
+    sx, sy, st, sL = out
+    return {"ok": bool(feasible(sx, sy, st, sL, MARGIN)), "side": float(sL), "gain": float(L0 - sL),
+            "packing": (sx, sy, st)}
+
+
+def evaluate(path: Path, task: str, seed_dir: Path = SEED_DIR, cpu_seconds: int = 60,
+             offer_root: Path | None = None) -> dict:
+    """Score one program on every n of a task. Wins are offered to the store at offer_root, if given."""
+    spec = TASKS[task]
+    per_n, total = {}, 0.0
+    for n in spec["ns"]:
+        ctx = make_ctx(n, spec["corner"], spec["size"], seed_dir, spec["goal"])
+        t0 = time.time()
+        try:
+            sq = run_program(Path(path), ctx, cpu_seconds)
+            x, y, t, L0 = assemble(ctx, sq, seed_dir)
+            r = score_layout(x, y, t, L0)
+        except Exception as ex:  # a broken program scores as a failure, with its error shown
+            per_n[n] = {"ok": False, "error": str(ex)[-600:]}
+            total -= 1.0
+            continue
+        res = {"ok": r["ok"], "side": r["side"], "gain": r["gain"], "seconds": round(time.time() - t0, 1)}
+        if r["ok"] and r["gain"] > 1e-9 and offer_root is not None:
+            px, py, pt = r["packing"]
+            res["offer"] = best_store.offer(n, px, py, np.degrees(pt), f"progsearch:{task}", root=offer_root)
+        per_n[n] = res
+        total += r["gain"] if r["ok"] else -1.0
+    return {"task": task, "score": total, "per_n": per_n}
+
+
+# ---------------- board: programs and scores as files
+def _pid(code: str) -> str:
+    return hashlib.sha1(code.encode()).hexdigest()[:10]
+
+
+def submit(path: Path, task: str, author: str, note: str = "", parent: str | None = None,
+           board: Path = BOARD, **kw) -> dict:
+    code = Path(path).read_text()
+    pid = _pid(code)
+    d = Path(board) / task
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{pid}.py").write_text(code)
+    r = evaluate(d / f"{pid}.py", task, **kw)
+    r.update(id=pid, author=author, note=note, parent=parent, time=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    (d / f"{pid}.json").write_text(json.dumps(r, indent=1, default=str))
+    return r
+
+
+def leaderboard(task: str, board: Path = BOARD, top: int = 10) -> list[dict]:
+    d = Path(board) / task
+    rows = [json.loads(p.read_text()) for p in d.glob("*.json")] if d.exists() else []
+    return sorted(rows, key=lambda r: -r["score"])[:top]

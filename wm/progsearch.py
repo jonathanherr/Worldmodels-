@@ -45,6 +45,18 @@ BOARD = Path(os.environ.get("PROGSEARCH_BOARD", "/mnt/project-files/squares/prog
 TARGETS = {147: 12.651043553627, 299: 17.802718854399, 335: 18.794904187687, 412: 20.798165581954}
 
 TASKS = {
+    # Whole-construction tasks: the program builds all n squares from scratch (it may start from the
+    # record in ctx["original"]). Pilot 2 showed the 299/335/412 strip is a local optimum of its own
+    # design (g = (sqrt7 - 1)/2 from dominoes spanning one staircase step), so a win needs a new
+    # design, staircases included; scoring one program on the whole family keeps it general.
+    "construct-strip": {"ns": [299, 335, 412], "select": "all", "corner": "bl", "size": None,
+                        "goal": "Build the whole packing of n squares (a construction that works for every n "
+                                "in the family). The record is a two-wide strip at 24.3 degrees between two "
+                                "axis-aligned staircases, provably optimal for that design; beat it with a "
+                                "different design."},
+    "construct147": {"ns": [147], "select": "all", "corner": "bl", "size": None,
+                     "goal": "Build the whole packing of 147 squares. The record is the 148 layout (45-degree "
+                             "8x8 diamond in an axis frame) minus one corner square; beat it with a different design."},
     # Whole-block tasks: the tilted block is the program's, the axis-aligned frame stays. Deleting
     # every tilted square lets the rest compact to 12.0 / 18.0, while deleting any corner, end or
     # half of the block frees nothing (each frame row and column across the block holds the side
@@ -99,7 +111,11 @@ def make_ctx(n: int, corner: str, size: float | None, seed_dir: Path = SEED_DIR,
     axis-aligned (size becomes the box side and the frame is the box's own, bl corner)."""
     x, y, t, L = load_seed(n, seed_dir)
     lx, ly, ld = to_local(x, y, np.degrees(t), L, corner)
-    if select == "tilted":
+    if select == "all":
+        inside = np.ones(n, dtype=bool)
+        size = L
+        near = ~inside
+    elif select == "tilted":
         a = np.degrees(t) % 90.0
         inside = (a > 0.1) & (a < 89.9)
         size = L
@@ -151,12 +167,16 @@ def assemble(ctx: dict, squares: list, seed_dir: Path = SEED_DIR):
     x, y, t, L = load_seed(ctx["n"], seed_dir)
     keep = ~np.array(ctx["_inside"])
     a = np.array(squares, dtype=float)
+    if not keep.any():  # whole construction: move it to the origin, the side is its own extent
+        w = 0.5 * (np.abs(np.cos(np.radians(a[:, 2]))) + np.abs(np.sin(np.radians(a[:, 2]))))
+        a[:, 0] -= (a[:, 0] - w).min()
+        a[:, 1] -= (a[:, 1] - w).min()
     gx, gy, gd = to_global(a[:, 0], a[:, 1], a[:, 2], L, ctx["corner"])
     return (np.concatenate([x[keep], gx]), np.concatenate([y[keep], gy]),
             np.concatenate([t[keep], np.radians(gd)]), L)
 
 
-def score_layout(x, y, t, L0, rounds: int = 60) -> dict:
+def score_layout(x, y, t, L0, rounds: int = 60, start: float | None = None) -> dict:
     """Side the assembled packing reaches: the better of two shrink routes.
 
     `squeeze` (scale and relax from the record side) keeps record precision but cannot
@@ -165,11 +185,12 @@ def score_layout(x, y, t, L0, rounds: int = 60) -> dict:
     room freed anywhere (335 minus its strip compacts to about 18.0), at about 1e-3 precision.
     """
     best = None
+    Ls = L0 if start is None else start
     for route in ("squeeze", "compact"):
         if route == "squeeze":
-            out = squeeze(x, y, t, L0, rounds=rounds, step=2e-4, min_step=1e-9, maxiter=4000)
+            out = squeeze(x, y, t, Ls, rounds=rounds, step=2e-4, min_step=1e-9, maxiter=4000)
         else:
-            out = compact_squeeze(x, y, t, L0 * 1.002)
+            out = compact_squeeze(x, y, t, Ls * 1.002)
         if out is None:
             continue
         sx, sy, st, sL = out
@@ -192,7 +213,11 @@ def evaluate(path: Path, task: str, seed_dir: Path = SEED_DIR, cpu_seconds: int 
         try:
             sq = run_program(Path(path), ctx, cpu_seconds)
             x, y, t, L0 = assemble(ctx, sq, seed_dir)
-            r = score_layout(x, y, t, L0)
+            start = None
+            if spec.get("select") == "all":  # start from the construction's own enclosing side
+                w = 0.5 * (np.abs(np.cos(t)) + np.abs(np.sin(t)))
+                start = max(float((x + w).max()), float((y + w).max())) * (1 + 1e-9)
+            r = score_layout(x, y, t, L0, start=start)
         except Exception as ex:  # a broken program scores as a failure, with its error shown
             per_n[n] = {"ok": False, "error": str(ex)[-600:]}
             total -= 1.0
@@ -237,6 +262,8 @@ def headroom(task: str, seed_dir: Path = SEED_DIR) -> dict:
     (the binding contact chain runs elsewhere), so check this before spending agent time.
     """
     spec = TASKS[task]
+    if spec.get("select") == "all":
+        return {n: {"headroom": "whole construction: unbounded"} for n in spec["ns"]}
     out = {}
     for n in spec["ns"]:
         ctx = make_ctx(n, spec["corner"], spec["size"], seed_dir, select=spec.get("select", "window"))

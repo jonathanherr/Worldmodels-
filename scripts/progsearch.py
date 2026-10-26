@@ -29,9 +29,9 @@ PERSONAS = {
 def brief(task, persona=None, top=3):
     spec = ps.TASKS[task]
     lines = [f"# Program search task: {task}", "", spec["goal"], "",
-             f"n values: {spec['ns']}. Window: {spec['size']} x {spec['size']} at the {spec['corner']} corner.",
+             f"n values: {spec['ns']}. " + ("Window: every tilted square; coordinates are the box's own." if spec.get("select") == "tilted" else f"Window: {spec['size']} x {spec['size']} at the {spec['corner']} corner."),
              "Write a Python file defining build(ctx) that returns exactly ctx['k'] squares (x, y, angle_deg)",
-             "in window-local coordinates: box walls are x = 0 and y = 0, the window is [0, size]^2.",
+             "in window-local coordinates: box walls are x = 0 and y = 0 (and x = y = side for whole-block tasks), corner windows are [0, size]^2.",
              "ctx keys: n, k, size, side (record side), target_side (best side another team reached),",
              "original (record's window squares), frozen (fixed neighbours you must not overlap).",
              "Helpers: from wm.progsearch_lib import block, rotate, translate, worst_overlap, settle, waste_in.",
@@ -59,12 +59,13 @@ def main():
     s = sub.add_parser("submit"); s.add_argument("prog"); s.add_argument("task"); s.add_argument("--author", required=True)
     s.add_argument("--note", default=""); s.add_argument("--parent"); s.add_argument("--offer", action="store_true")
     t = sub.add_parser("top"); t.add_argument("task"); t.add_argument("--k", type=int, default=10)
+    h = sub.add_parser("headroom"); h.add_argument("task")
     p = sub.add_parser("prompt"); p.add_argument("task"); p.add_argument("--persona", choices=sorted(PERSONAS))
     a = ap.parse_args()
     offer_root = Path(os.environ["SQUARES_BEST_DIR"]) if getattr(a, "offer", False) and "SQUARES_BEST_DIR" in os.environ else None
     if a.cmd == "ctx":
         spec = ps.TASKS[a.task]
-        ctx = ps.make_ctx(a.n or spec["ns"][0], spec["corner"], spec["size"], goal=spec["goal"])
+        ctx = ps.make_ctx(a.n or spec["ns"][0], spec["corner"], spec["size"], goal=spec["goal"], select=spec.get("select", "window"))
         print(json.dumps({k: v for k, v in ctx.items() if not k.startswith("_")}, indent=1))
     elif a.cmd == "eval":
         print(json.dumps(ps.evaluate(Path(a.prog), a.task, offer_root=offer_root), indent=1, default=str))
@@ -74,6 +75,8 @@ def main():
     elif a.cmd == "top":
         for r in ps.leaderboard(a.task, top=a.k):
             print(f"{r['id']}  {r['score']:+.6f}  {r['author']:10s}  {r['note']}")
+    elif a.cmd == "headroom":
+        print(json.dumps(ps.headroom(a.task), indent=1))
     elif a.cmd == "prompt":
         print(brief(a.task, a.persona))
 

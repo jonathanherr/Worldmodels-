@@ -35,7 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from . import best_store
-from .pack_opt import MARGIN, feasible, squeeze
+from .pack_opt import MARGIN, compact_squeeze, feasible, squeeze
 
 REPO = Path(__file__).resolve().parent.parent
 SEED_DIR = Path(os.environ.get("PROGSEARCH_SEEDS", "/mnt/project-files/squares/public-certs/store"))
@@ -45,6 +45,17 @@ BOARD = Path(os.environ.get("PROGSEARCH_BOARD", "/mnt/project-files/squares/prog
 TARGETS = {147: 12.651043553627, 299: 17.802718854399, 335: 18.794904187687, 412: 20.798165581954}
 
 TASKS = {
+    # Whole-block tasks: the tilted block is the program's, the axis-aligned frame stays. Deleting
+    # every tilted square lets the rest compact to 12.0 / 18.0, while deleting any corner, end or
+    # half of the block frees nothing (each frame row and column across the block holds the side
+    # on its own), so these are the smallest windows found with real headroom.
+    "diamond147": {"ns": [147], "select": "tilted", "corner": "bl", "size": None,
+                   "goal": "Your squares replace the 64-square 45-degree diamond; the axis-aligned frame "
+                           "around it stays. Fill the hole with 64 squares so the whole packing can shrink."},
+    "strip": {"ns": [299, 335, 412], "select": "tilted", "corner": "bl", "size": None,
+              "goal": "Your squares replace the tilted diagonal strip (and its odd-angle end pieces); the "
+                      "axis-aligned staircases on both sides stay. Rebuild the strip so the packing can shrink."},
+    # Corner windows: kept as negative controls. With the window emptied the side does not move.
     # Warm-up with a known answer: 147 is the 148 record minus its top-right corner square.
     "corner147": {"ns": [147], "corner": "tr", "size": 4.0,
                   "goal": "The window holds the empty corner cell left by removing square 148. "
@@ -82,11 +93,20 @@ def to_global(lx, ly, ld, L, corner):
     return to_local(lx, ly, ld, L, corner)  # the reflection is its own inverse
 
 
-def make_ctx(n: int, corner: str, size: float, seed_dir: Path = SEED_DIR, goal: str = "") -> dict:
+def make_ctx(n: int, corner: str, size: float | None, seed_dir: Path = SEED_DIR, goal: str = "",
+             select: str = "window") -> dict:
+    """select="window": squares centred in the size x size corner window; "tilted": every square not
+    axis-aligned (size becomes the box side and the frame is the box's own, bl corner)."""
     x, y, t, L = load_seed(n, seed_dir)
     lx, ly, ld = to_local(x, y, np.degrees(t), L, corner)
-    inside = (lx < size) & (ly < size)
-    near = ~inside & (lx < size + 2.0) & (ly < size + 2.0)
+    if select == "tilted":
+        a = np.degrees(t) % 90.0
+        inside = (a > 0.1) & (a < 89.9)
+        size = L
+        near = ~inside
+    else:
+        inside = (lx < size) & (ly < size)
+        near = ~inside & (lx < size + 2.0) & (ly < size + 2.0)
     sq = lambda m: [[round(float(a), 9), round(float(b), 9), round(float(c) % 90.0, 6)]
                     for a, b, c in zip(lx[m], ly[m], ld[m])]
     return {"n": n, "corner": corner, "size": size, "side": L, "k": int(inside.sum()),
@@ -137,13 +157,28 @@ def assemble(ctx: dict, squares: list, seed_dir: Path = SEED_DIR):
 
 
 def score_layout(x, y, t, L0, rounds: int = 60) -> dict:
-    """Squeeze the assembled packing from the record side; returns the side it reaches."""
-    out = squeeze(x, y, t, L0, rounds=rounds, step=2e-4, min_step=1e-9, maxiter=4000)
-    if out is None:
+    """Side the assembled packing reaches: the better of two shrink routes.
+
+    `squeeze` (scale and relax from the record side) keeps record precision but cannot
+    propagate a rearrangement through a jammed packing: with all 45 strip squares of 335 deleted
+    it still stops at the record side. `compact_squeeze` makes the side a variable, so it finds
+    room freed anywhere (335 minus its strip compacts to about 18.0), at about 1e-3 precision.
+    """
+    best = None
+    for route in ("squeeze", "compact"):
+        if route == "squeeze":
+            out = squeeze(x, y, t, L0, rounds=rounds, step=2e-4, min_step=1e-9, maxiter=4000)
+        else:
+            out = compact_squeeze(x, y, t, L0 * 1.002)
+        if out is None:
+            continue
+        sx, sy, st, sL = out
+        if feasible(sx, sy, st, sL, MARGIN) and (best is None or sL < best[3]):
+            best = (sx, sy, st, float(sL), route)
+    if best is None:
         return {"ok": False, "side": math.inf, "gain": -math.inf}
-    sx, sy, st, sL = out
-    return {"ok": bool(feasible(sx, sy, st, sL, MARGIN)), "side": float(sL), "gain": float(L0 - sL),
-            "packing": (sx, sy, st)}
+    sx, sy, st, sL, route = best
+    return {"ok": True, "side": sL, "gain": float(L0 - sL), "route": route, "packing": (sx, sy, st)}
 
 
 def evaluate(path: Path, task: str, seed_dir: Path = SEED_DIR, cpu_seconds: int = 60,
@@ -152,7 +187,7 @@ def evaluate(path: Path, task: str, seed_dir: Path = SEED_DIR, cpu_seconds: int 
     spec = TASKS[task]
     per_n, total = {}, 0.0
     for n in spec["ns"]:
-        ctx = make_ctx(n, spec["corner"], spec["size"], seed_dir, spec["goal"])
+        ctx = make_ctx(n, spec["corner"], spec["size"], seed_dir, spec["goal"], spec.get("select", "window"))
         t0 = time.time()
         try:
             sq = run_program(Path(path), ctx, cpu_seconds)
@@ -162,7 +197,7 @@ def evaluate(path: Path, task: str, seed_dir: Path = SEED_DIR, cpu_seconds: int 
             per_n[n] = {"ok": False, "error": str(ex)[-600:]}
             total -= 1.0
             continue
-        res = {"ok": r["ok"], "side": r["side"], "gain": r["gain"], "seconds": round(time.time() - t0, 1)}
+        res = {"ok": r["ok"], "side": r["side"], "gain": r["gain"], "route": r.get("route"), "seconds": round(time.time() - t0, 1)}
         if r["ok"] and r["gain"] > 1e-9 and offer_root is not None:
             px, py, pt = r["packing"]
             res["offer"] = best_store.offer(n, px, py, np.degrees(pt), f"progsearch:{task}", root=offer_root)
@@ -193,3 +228,21 @@ def leaderboard(task: str, board: Path = BOARD, top: int = 10) -> list[dict]:
     d = Path(board) / task
     rows = [json.loads(p.read_text()) for p in d.glob("*.json")] if d.exists() else []
     return sorted(rows, key=lambda r: -r["score"])[:top]
+
+
+def headroom(task: str, seed_dir: Path = SEED_DIR) -> dict:
+    """Upper bound on a task's gain: squeeze each packing with the window's squares deleted.
+
+    If the side does not shrink even with the window empty, no program for that window can win
+    (the binding contact chain runs elsewhere), so check this before spending agent time.
+    """
+    spec = TASKS[task]
+    out = {}
+    for n in spec["ns"]:
+        ctx = make_ctx(n, spec["corner"], spec["size"], seed_dir, select=spec.get("select", "window"))
+        x, y, t, L0 = load_seed(n, seed_dir)
+        keep = ~np.array(ctx["_inside"])
+        r = score_layout(x[keep], y[keep], t[keep], L0)
+        out[n] = {"k": ctx["k"], "empty_window_side": r["side"], "headroom": r["gain"],
+                  "needed": None if n not in TARGETS else L0 - TARGETS[n]}
+    return out

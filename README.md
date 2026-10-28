@@ -211,6 +211,16 @@ The policy gets clearly closer than the one-shot nets at 37 and 50 but does not 
 constructions, and at 41 and 55 it stays on the grid. The target box matters: 0.02 under the stored
 side with a 0.02 overlap tolerance lets the grid "fit", and the policy never leaves it.
 
+Curriculum (`--curriculum`): the stored packing guides the policy. Its poses, scaled into the target
+box, are extra candidate spots, and a 12th feature says how close a spot is to the nearest unused
+guide pose. CMA-ES starts from a policy that only follows the guide (it reproduces the stored
+packing), then the target shrinks 0, 0.01, 0.02, 0.04, 0.06, 0.08 below the stored side, 15
+generations per stage, each stage starting from the last one's mean. Result at n = 37 and 50: the
+policy reproduces the stored side (6.6213, 7.6213) in every stage, and at the tighter targets the
+best layouts squeeze back to slightly worse versions of it (6.626-6.628 at n = 37). The stored
+constructions are local optima for compact + squeeze, and a guide toward them keeps the search in
+their basin.
+
 ### Dimensional relaxation (lifted squares)
 
 `wm/lift.py` gives every square a height so jammed squares can pass over each other, then pushes

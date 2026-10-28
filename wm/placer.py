@@ -30,7 +30,7 @@ for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
 
 from .pack_opt import compact, squeeze  # noqa: E402
 
-N_FEAT = 11
+N_FEAT = 12
 CONTACT = 0.05  # a gap below this counts as touching
 
 
@@ -54,8 +54,12 @@ def _pair_depth(x1, y1, t1, x2, y2, t2):
 
 
 @njit(cache=True)
-def candidate_features(px, py, pt, cx, cy, ct, L, frac):
-    """Features (C, N_FEAT) and worst overlap (C,) of candidate spots against placed squares."""
+def candidate_features(px, py, pt, cx, cy, ct, L, frac, gx, gy, gt):
+    """Features (C, N_FEAT) and worst overlap (C,) of candidate spots against placed squares.
+
+    (gx, gy, gt) are the guide poses still unused (empty without a guide); the last feature is
+    how close a spot is to the nearest of them, in position and angle.
+    """
     C = cx.shape[0]
     P = px.shape[0]
     f = np.zeros((C, N_FEAT))
@@ -100,6 +104,13 @@ def candidate_features(px, py, pt, cx, cy, ct, L, frac):
         f[c, 8] = dense / 4.0
         f[c, 9] = match
         f[c, 10] = 2 * frac - 1
+        near = 1e9
+        for q in range(gx.shape[0]):
+            ddx, ddy = gx[q] - x, gy[q] - y
+            d = (ddx * ddx + ddy * ddy) / 0.25 + 2.0 * (1.0 - math.cos(4.0 * (t - gt[q])))
+            if d < near:
+                near = d
+        f[c, 11] = math.exp(-near) if gx.shape[0] > 0 else 0.0
     return f, worst
 
 
@@ -132,14 +143,25 @@ def genome_size(hidden):
     return N_FEAT * hidden + 2 * hidden
 
 
-def place_all(genome, n, L, hidden=8, step=0.1, tol=0.02, rng=None):
-    """Run the policy: place n squares into [0, L]^2. Returns (x, y, t, leftover overlap)."""
+def place_all(genome, n, L, hidden=8, step=0.1, tol=0.02, guide=None):
+    """Run the policy: place n squares into [0, L]^2. Returns (x, y, t, leftover overlap).
+
+    guide = (x, y, t, L_guide), e.g. the stored best packing: its poses, scaled into the target
+    box, become extra candidate spots and feed the guide feature. Each placed square uses up the
+    guide pose nearest to it, so the feature always points at the open guide slots.
+    """
     w1, b1, w2 = unpack(genome, hidden)
     grid = Grid(L, step)
+    cx, cy, ct = grid.x, grid.y, grid.t
+    gx = gy = gt = np.zeros(0)
+    if guide is not None:
+        k = L / guide[3]
+        gx, gy, gt = guide[0] * k, guide[1] * k, np.asarray(guide[2], dtype=float)
+        cx, cy, ct = np.concatenate([cx, gx]), np.concatenate([cy, gy]), np.concatenate([ct, gt])
     px, py, pt = np.zeros(0), np.zeros(0), np.zeros(0)
     leftover = 0.0
     for k in range(n):
-        f, worst = candidate_features(px, py, pt, grid.x, grid.y, grid.t, L, k / n)
+        f, worst = candidate_features(px, py, pt, cx, cy, ct, L, k / n, gx, gy, gt)
         score = np.tanh(f @ w1 + b1) @ w2
         ok = worst <= tol
         if ok.any():
@@ -148,13 +170,16 @@ def place_all(genome, n, L, hidden=8, step=0.1, tol=0.02, rng=None):
         else:
             c = int(np.argmin(worst - 1e-3 * score))
             leftover += float(worst[c])
-        px, py, pt = np.append(px, grid.x[c]), np.append(py, grid.y[c]), np.append(pt, grid.t[c])
+        px, py, pt = np.append(px, cx[c]), np.append(py, cy[c]), np.append(pt, ct[c])
+        if len(gx):
+            q = int(np.argmin((gx - cx[c]) ** 2 + (gy - cy[c]) ** 2))
+            gx, gy, gt = np.delete(gx, q), np.delete(gy, q), np.delete(gt, q)
     return px, py, pt, leftover
 
 
-def develop(genome, n, L, hidden=8, step=0.1, rounds=16, maxiter=400, tol=0.02):
+def develop(genome, n, L, hidden=8, step=0.1, rounds=16, maxiter=400, tol=0.02, guide=None):
     """Place, compact, squeeze. Returns (fitness, side, (x, y, t))."""
-    x, y, t, leftover = place_all(genome, n, L, hidden, step, tol)
+    x, y, t, leftover = place_all(genome, n, L, hidden, step, tol, guide)
     x, y, t, Lc = compact(x, y, t, L, maxiter=maxiter)
     r = squeeze(x, y, t, Lc * 1.0005, rounds=rounds, step=0.001, method="lbfgs", maxiter=1500)
     if r is None:
@@ -164,19 +189,31 @@ def develop(genome, n, L, hidden=8, step=0.1, rounds=16, maxiter=400, tol=0.02):
 
 
 def _eval(args):
-    genome, n, L, hidden, step, tol = args
-    return develop(genome, n, L, hidden, step, tol=tol)
+    genome, n, L, hidden, step, tol, guide = args
+    return develop(genome, n, L, hidden, step, tol=tol, guide=guide)
 
 
-def evolve(n, L, gens=40, popsize=None, sigma=0.5, hidden=8, step=0.1, tol=0.02, seed=0, workers=4, log=print):
+def guide_follower(hidden):
+    """A genome that just follows the guide: every hidden unit reads only the guide feature."""
+    g = np.zeros(genome_size(hidden))
+    w1, _, w2 = unpack(g, hidden)  # views into g
+    w1[N_FEAT - 1, :] = 1.0
+    w2[:] = 1.0
+    return g
+
+
+def evolve(n, L, gens=40, popsize=None, sigma=0.5, hidden=8, step=0.1, tol=0.02, seed=0, workers=4,
+           guide=None, x0=None, log=print):
     """CMA-ES over the placement net for puzzle n with target box L.
 
-    Returns (best_genome, (side, (x, y, t))): the best squeezed packing seen in any genome.
+    x0 is the starting mean (default: small random weights). Returns (best_genome, (side, (x, y, t)),
+    final_mean): the best squeezed packing seen in any genome and where the search ended.
     """
     import cma
 
     size = genome_size(hidden)
-    es = cma.CMAEvolutionStrategy(np.random.default_rng(seed).normal(0, 0.3, size), sigma,
+    start = np.random.default_rng(seed).normal(0, 0.3, size) if x0 is None else np.asarray(x0)
+    es = cma.CMAEvolutionStrategy(start, sigma,
                                   {"popsize": popsize or 4 + int(3 * math.log(size)), "seed": seed + 1,
                                    "verbose": -9})
     best = (math.inf, None)
@@ -184,7 +221,7 @@ def evolve(n, L, gens=40, popsize=None, sigma=0.5, hidden=8, step=0.1, tol=0.02,
     with mp.get_context("spawn").Pool(workers) as pool:
         for g in range(gens):
             pop = es.ask()
-            res = pool.map(_eval, [(np.asarray(z), n, L, hidden, step, tol) for z in pop])
+            res = pool.map(_eval, [(np.asarray(z), n, L, hidden, step, tol, guide) for z in pop])
             fits = [r[0] / math.sqrt(n) for r in res]
             for fit, side, pk in res:
                 if pk is not None and side < best[0]:
@@ -194,4 +231,21 @@ def evolve(n, L, gens=40, popsize=None, sigma=0.5, hidden=8, step=0.1, tol=0.02,
                 best_fit, best_genome = min(fits), np.asarray(pop[int(np.argmin(fits))])
             log(f"gen {g:3d}  best {min(fits) * math.sqrt(n):.4f}  median {np.median(fits) * math.sqrt(n):.4f}  "
                 f"overall side {best[0]:.4f}  sigma {es.sigma:.3f}", flush=True)
-    return best_genome, best
+    return best_genome, best, np.asarray(es.mean)
+
+
+def curriculum(n, guide, shrinks=(0.0, 0.01, 0.02, 0.04, 0.06, 0.08), gens=15, sigma=0.3, log=print, **kw):
+    """Start at the guide's side with a policy that reproduces the guide, then shrink the target box
+    stage by stage, starting each stage's CMA-ES from where the previous one ended.
+
+    Returns (side, (x, y, t)): the best squeezed packing over all stages.
+    """
+    hidden = kw.get("hidden", 8)
+    mean, best = guide_follower(hidden), (math.inf, None)
+    for s in shrinks:
+        L = guide[3] - s
+        log(f"stage: target {L:.4f}", flush=True)
+        _, stage_best, mean = evolve(n, L, gens=gens, sigma=sigma, guide=guide, x0=mean, log=log, **kw)
+        if stage_best[0] < best[0]:
+            best = stage_best
+    return best

@@ -168,6 +168,30 @@ its keep from about n = 18 up: at n = 29 random restarts never got below the gri
 the evolved net reached 5.992 twice in separate runs. Deforming a stored construction
 (`--from-store`) gave the 17, 18, 19 and 54 results. These packings are in `solutions/`.
 
+**NEAT variant** (`wm/neat.py`, `--neat`): evolves the network's structure as well as its weights.
+Genomes are node genes (activation from tanh, sin, gauss, abs, relu, step, identity, plus a bias)
+and connection genes with innovation numbers. Mutations: perturb/reset weights and biases, add a
+connection (kept acyclic), split a connection with a new node, swap an activation, toggle a
+connection, nudge the box gene. Crossover aligns genes by innovation number; species by
+compatibility distance with an adaptive threshold, offspring shared by mean fitness rank,
+stagnant species stop breeding. Same decode and Baldwinian fitness as the CMA-ES net;
+`--smooth` blends the (continuous) compacted side into the fitness.
+
+Race at equal evaluation budgets (NEAT pop 48 x 40 gens vs CMA-ES pop 21 x 91 gens), 20 basin-hopping steps after:
+
+| run | n = 29 | n = 37 |
+| --- | --- | --- |
+| CMA-ES from grid | 5.9984 / 6.0 (2 seeds) | 6.7074 |
+| NEAT from grid | **5.93450** / 6.0 (2 seeds) | 6.7071 |
+| NEAT from grid, `--smooth 0.5` | | 6.7083 |
+| CMA-ES / NEAT from the stored construction | | 6.6213 / 6.6213 (unchanged) |
+| best known (Friedman) | 5.9344 | 6.5987 |
+
+The n = 29 NEAT run matched the best known packing (its net reached 5.9936; basin hopping
+finished it). Otherwise NEAT and CMA-ES tie: most decoded layouts squeeze back to exactly the
+grid side, so fitness is flat and selection has little to work with, whichever optimizer moves
+the weights. The champions stayed small (0-3 hidden nodes, 3-12 connections).
+
 ### Dimensional relaxation (lifted squares)
 
 `wm/lift.py` gives every square a height so jammed squares can pass over each other, then pushes

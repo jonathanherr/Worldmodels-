@@ -13,6 +13,9 @@ Examples:
     # Let the net deform the stored best packings (e.g. construction results) instead of the grid
     python -m scripts.evolve_squares --n 37,50 --per-n --from-store
 
+    # NEAT: evolve the network's structure and activation functions too, with crossover and species
+    python -m scripts.evolve_squares --n 29 --neat --gens 40
+
     # Only basin-hop what is already stored (e.g. construction packings), no evolution
     python -m scripts.evolve_squares --n 30-40 --refine-only
 
@@ -28,7 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
-from wm import best_store
+from wm import best_store, neat
 from wm.neuroevo import NetShape, evolve, random_genome_baseline, refine
 from wm.pack_opt import squeeze
 from wm.squares import polish
@@ -72,6 +75,10 @@ if __name__ == "__main__":
     p.add_argument("--from-store", action="store_true",
                    help="have the net deform the stored best packing for each n instead of the grid")
     p.add_argument("--refine-only", action="store_true", help="only basin-hop the stored packings")
+    p.add_argument("--smooth", type=float, default=0.0,
+                   help="NEAT: blend this much of the (continuous) compacted side into the fitness")
+    p.add_argument("--neat", action="store_true",
+                   help="evolve topology, activations and weights with NEAT instead of CMA-ES on a fixed MLP")
     p.add_argument("--out", default="runs/neuroevo")
     args = p.parse_args()
 
@@ -105,13 +112,21 @@ if __name__ == "__main__":
                     bases[n] = (stored[0], stored[1], np.deg2rad(stored[2]), best_store.best_side(n))
         groups = [[n] for n in ns] if args.per_n else [ns]
         for group in groups:
-            genome, best, shape = evolve(group, gens=args.gens, popsize=args.pop, sigma=args.sigma,
-                                         hidden=args.hidden, seed=args.seed, workers=args.workers,
-                                         rounds=args.rounds, bases=bases)
             tag = f"{group[0]}-{group[-1]}"
-            np.save(out / f"genome_{tag}_h{shape.hidden}_s{args.seed}.npy", genome)
+            if args.neat:
+                cfg = neat.NeatConfig(pop=args.pop or 48)
+                genome, best = neat.evolve(group, gens=args.gens, cfg=cfg, seed=args.seed, workers=args.workers,
+                                           rounds=args.rounds, bases=bases, smooth=args.smooth)
+                (out / f"neat_{tag}_s{args.seed}.txt").write_text(neat.describe(genome))
+                method = "neuroevo:neat"
+            else:
+                genome, best, shape = evolve(group, gens=args.gens, popsize=args.pop, sigma=args.sigma,
+                                             hidden=args.hidden, seed=args.seed, workers=args.workers,
+                                             rounds=args.rounds, bases=bases)
+                np.save(out / f"genome_{tag}_h{shape.hidden}_s{args.seed}.npy", genome)
+                method = "neuroevo:cma"
             for n in group:
-                summary.append(finish(n, *best[n], args, "neuroevo:cma" + ("-store" if n in bases else "")))
+                summary.append(finish(n, *best[n], args, method + ("-store" if n in bases else "")))
     summary = [s for s in summary if s]
     print(f"done in {time.time() - t0:.0f}s; kept {sum(s['accepted'] for s in summary)} of {len(summary)}; "
           f"store total now {best_store.total_score():.4f}")

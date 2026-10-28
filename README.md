@@ -192,6 +192,25 @@ finished it). Otherwise NEAT and CMA-ES tie: most decoded layouts squeeze back t
 grid side, so fitness is flat and selection has little to work with, whichever optimizer moves
 the weights. The champions stayed small (0-3 hidden nodes, 3-12 connections).
 
+**Sequential placement policy** (`wm/placer.py`, `scripts/place_squares.py`): the evolved net is a
+policy instead of a one-shot decoder. Squares go into a target box one at a time; every candidate
+spot (0.1 grid x angles 0, 10, 20, 30, 40, 45 deg, ~17k spots at n = 37) gets 11 local features
+(position, corner distance, wall gap and contacts, angle, gap to and contacts with placed squares,
+local density, angle match with the nearest neighbour, fraction placed), the MLP scores them, and
+the best spot overlapping by at most `--tol` wins. Then `compact_squeeze`; fitness is the side plus
+0.01 x the overlap left at placement time. CMA-ES on the weights, 80 generations, about 4 min per n.
+
+| n | one-shot net (CMA-ES / NEAT) | placement policy, target 0.07 under stored | stored | best known |
+| --- | --- | --- | --- | --- |
+| 37 | 6.7074 / 6.7071 | 6.6526 | 6.6213 | 6.5987 |
+| 41 | | 7.0 | 7.0 | |
+| 50 | 7.7071 (CMA-ES) | 7.6820 | 7.6213 | 7.5987 |
+| 55 | | 8.0 | 8.0 | |
+
+The policy gets clearly closer than the one-shot nets at 37 and 50 but does not beat the stored
+constructions, and at 41 and 55 it stays on the grid. The target box matters: 0.02 under the stored
+side with a 0.02 overlap tolerance lets the grid "fit", and the policy never leaves it.
+
 ### Dimensional relaxation (lifted squares)
 
 `wm/lift.py` gives every square a height so jammed squares can pass over each other, then pushes

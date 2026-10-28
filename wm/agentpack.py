@@ -14,9 +14,15 @@ the earlier neighbour rules (wm/life.py), shaking (sieve) and perturbation of re
 * slide    negotiation along a corridor: a stressed agent asks the agents between it and the
            nearest hole to shift one step towards the hole, so a vacancy travels to the crowd
            like a tile in a sliding puzzle. Accepted only if the total energy drops.
+* rotate    a stressed agent turns in place to the angle (its own +-, axis, 45 degrees, its
+           neighbours' tilts, random) that crowds its neighbours least; coalitions can turn to
+           the biggest group's tilt or any angle.
 * coalition agents with the same tilt that touch edge to edge form a coalition (a row, a strip
            or a block) and move as one rigid body: a small rotation or translation of the whole
            group, then a short relax, accepted Metropolis-style.
+
+An optional organizing reward (`organize_grad`) pulls neighbours to a shared tilt and onto
+shared row lines, so blocks and strips form; it fades as the box shrinks.
 
 `agent_pack(n, ...)` runs the whole thing from a random gas and returns the smallest feasible
 packing it reached, after a final `compact_squeeze`.
@@ -107,6 +113,98 @@ def best_hole(x, y, t, skip, L, cand_x, cand_y, angles, margin):
     return be, bx, by, bt
 
 
+@njit(cache=True)
+def organize_grad(x, y, t, reach):
+    """The organizing reward, as an energy to minimize, and its gradient.
+
+    For every pair of neighbours (centres closer than `reach`, weight fading to 0 at `reach`):
+    tilt term (1 - cos 4(t_j - t_i)) / 2 is 0 when they share a tilt (mod 90 degrees), and row
+    term sin^2(pi p) sin^2(pi q), with (p, q) the offset in agent i's frame, is 0 when j sits on
+    one of i's row or column lines. Both reward squares lining up into blocks, rows and strips
+    at any common angle, which is the global structure the record packings are made of.
+    """
+    n = x.shape[0]
+    gx = np.zeros(n)
+    gy = np.zeros(n)
+    gt = np.zeros(n)
+    e = 0.0
+    R2 = reach * reach
+    pi = np.pi
+    for i in range(n):
+        ci = np.cos(t[i])
+        si = np.sin(t[i])
+        for j in range(i + 1, n):
+            dx = x[j] - x[i]
+            dy = y[j] - y[i]
+            r2 = dx * dx + dy * dy
+            if r2 >= R2:
+                continue
+            a = 1.0 - r2 / R2
+            phi = a * a
+            dphi_dx = 2 * a * (-2 * dx / R2)
+            dphi_dy = 2 * a * (-2 * dy / R2)
+            dl = t[j] - t[i]
+            T = 0.5 * (1 - np.cos(4 * dl))
+            dT = 2 * np.sin(4 * dl)
+            p = dx * ci + dy * si
+            q = -dx * si + dy * ci
+            sp2 = np.sin(pi * p) ** 2
+            sq2 = np.sin(pi * q) ** 2
+            Rw = sp2 * sq2
+            dR_dp = pi * np.sin(2 * pi * p) * sq2
+            dR_dq = sp2 * pi * np.sin(2 * pi * q)
+            e += phi * (T + Rw)
+            fx = dphi_dx * (T + Rw) + phi * (dR_dp * ci - dR_dq * si)
+            fy = dphi_dy * (T + Rw) + phi * (dR_dp * si + dR_dq * ci)
+            gx[j] += fx
+            gy[j] += fy
+            gx[i] -= fx
+            gy[i] -= fy
+            gt[j] += phi * dT
+            gt[i] += -phi * dT + phi * (dR_dp * q - dR_dq * p)
+    return e, gx, gy, gt
+
+
+@njit(cache=True)
+def relax_organize(x, y, t, L, margin, w, reach, iters):
+    """FIRE on overlap energy + w * organizing energy for a fixed number of steps."""
+    x, y, t = x.copy(), y.copy(), t.copy()
+    n = x.shape[0]
+    vx, vy, vt = np.zeros(n), np.zeros(n), np.zeros(n)
+    dt, dt_max, alpha, n_pos = 0.02, 0.1, 0.1, 0
+    for _ in range(iters):
+        _, gx, gy, gt, _, _ = energy_grad(x, y, t, L, margin)
+        _, ox, oy, ot = organize_grad(x, y, t, reach)
+        gx += w * ox
+        gy += w * oy
+        gt += w * ot
+        p = -(vx * gx).sum() - (vy * gy).sum() - (vt * gt).sum()
+        vnorm = np.sqrt((vx * vx).sum() + (vy * vy).sum() + (vt * vt).sum())
+        fnorm = np.sqrt((gx * gx).sum() + (gy * gy).sum() + (gt * gt).sum()) + 1e-300
+        if p > 0:
+            vx = (1 - alpha) * vx - alpha * vnorm * gx / fnorm
+            vy = (1 - alpha) * vy - alpha * vnorm * gy / fnorm
+            vt = (1 - alpha) * vt - alpha * vnorm * gt / fnorm
+            n_pos += 1
+            if n_pos > 5:
+                dt = min(dt * 1.1, dt_max)
+                alpha *= 0.99
+        else:
+            vx[:] = 0.0
+            vy[:] = 0.0
+            vt[:] = 0.0
+            dt *= 0.5
+            alpha = 0.1
+            n_pos = 0
+        vx -= dt * gx
+        vy -= dt * gy
+        vt -= dt * gt
+        x += dt * vx
+        y += dt * vy
+        t += dt * vt
+    return x, y, t
+
+
 def _energy(x, y, t, L, margin=MARGIN):
     return energy_grad(x, y, t, L, margin)[0]
 
@@ -149,15 +247,38 @@ def coalitions(x, y, t, tol=0.03, reach=1.15):
 class AgentPacker:
     """State and behaviours of the square agents for one n."""
 
-    def __init__(self, n, rng, margin=MARGIN, relax_iters=400, holes=300):
+    def __init__(self, n, rng, margin=MARGIN, relax_iters=400, holes=300, organize=0.0,
+                 reach=1.6):
         self.n, self.rng, self.margin = n, rng, margin
         self.relax_iters, self.holes = relax_iters, holes
-        self.stats = {"hop": 0, "slide": 0, "coalition": 0, "tries": 0}
+        self.organize, self.reach = organize, reach  # organizing reward weight; agent_pack decays it
+        self.stats = {"hop": 0, "slide": 0, "coalition": 0, "rotate": 0, "tries": 0}
 
     # -- the agents' shared local behaviour -------------------------------------------------
     def relax(self, x, y, t, L, iters=None):
-        x, y, t, e = relax_fire(x, y, t, L, self.margin, iters or self.relax_iters)
+        iters = iters or self.relax_iters
+        if self.organize > 0:
+            # Line up with the neighbours first, then settle overlaps on pure overlap energy,
+            # so feasibility (and the box) is never judged with the reward switched on.
+            x, y, t = relax_organize(x, y, t, L, self.margin, self.organize, self.reach, iters // 2)
+        x, y, t, e = relax_fire(x, y, t, L, self.margin, iters)
         return x, y, t, e
+
+    # -- rotate: turn in place to the angle that crowds the neighbours least ---------------
+    def rotate(self, x, y, t, L, i):
+        near = np.hypot(x - x[i], y - y[i]) < 2.0
+        near[i] = False
+        cand = np.concatenate([t[i] + np.array([-0.3, -0.12, -0.04, 0.04, 0.12, 0.3]),
+                               [0.0, np.pi / 4], t[near], self.rng.uniform(0, np.pi / 2, 4)])
+        jx = x[i] + np.concatenate([[0.0], self.rng.normal(0, 0.08, 7)])
+        jy = y[i] + np.concatenate([[0.0], self.rng.normal(0, 0.08, 7)])
+        e, px, py, pt = best_hole(x, y, t, i, L, jx, jy, cand, self.margin)
+        here = insertion_energy(x, y, t, i, x[i], y[i], t[i], L, self.margin)
+        if e < 0.7 * here:
+            x, y, t = x.copy(), y.copy(), t.copy()
+            x[i], y[i], t[i] = px, py, pt
+            return x, y, t, True
+        return x, y, t, False
 
     # -- hop: jump to the emptiest place in the box -----------------------------------------
     def hop(self, x, y, t, L, i, s):
@@ -219,7 +340,7 @@ class AgentPacker:
         return x, y, t, False
 
     # -- coalition: a group with a shared tilt moves as one rigid body ---------------------
-    def coalition_move(self, x, y, t, L, e_now, temp):
+    def coalition_move(self, x, y, t, L, e_now, temp, free_turn=False):
         groups = [g for g in coalitions(x, y, t) if len(g) >= 2]
         if not groups:
             return x, y, t, False
@@ -238,8 +359,13 @@ class AgentPacker:
             d = self.rng.normal(0, 0.25, 2)
             nx[g] += d[0]
             ny[g] += d[1]
-        else:  # turn the group to 45 degrees or back to axis: a strip forming or dissolving
-            target = np.pi / 4 if abs(_tilt(t[g]).mean() - np.pi / 4) > 0.3 else 0.0
+        else:  # turn the group: a strip or block forming, dissolving or joining another
+            if free_turn:
+                # Join the tilt of the biggest group, or try axis, 45 degrees or a random angle.
+                target = self.rng.choice([_tilt(t[groups[0]]).mean(), 0.0, np.pi / 4,
+                                          self.rng.uniform(0, np.pi / 2)])
+            else:
+                target = np.pi / 4 if abs(_tilt(t[g]).mean() - np.pi / 4) > 0.3 else 0.0
             a = target - _tilt(t[g]).mean()
             ca, sa = np.cos(a), np.sin(a)
             rx, ry = x[g] - cx, y[g] - cy
@@ -266,6 +392,14 @@ class AgentPacker:
                 if s[i] <= 0:
                     break
                 self.stats["tries"] += 1
+                if "rotate" in use:
+                    nx, ny, nt, ok = self.rotate(x, y, t, L, i)
+                    if ok:
+                        nx, ny, nt, ne = self.relax(nx, ny, nt, L)
+                        if ne < e:
+                            x, y, t, e = nx, ny, nt, ne
+                            self.stats["rotate"] += 1
+                            continue
                 if "hop" in use:
                     nx, ny, nt, ok = self.hop(x, y, t, L, i, s)
                     if ok:
@@ -282,7 +416,7 @@ class AgentPacker:
                             x, y, t, e = nx, ny, nt, ne
                             self.stats["slide"] += 1
             if "coalition" in use and e > 0:
-                nx, ny, nt, ok = self.coalition_move(x, y, t, L, e, temp)
+                nx, ny, nt, ok = self.coalition_move(x, y, t, L, e, temp, "rotate" in use)
                 if ok:
                     nx, ny, nt, ne = self.relax(nx, ny, nt, L)
                     x, y, t, e = nx, ny, nt, ne
@@ -299,10 +433,15 @@ def random_gas(n, rng, density=0.45):
 
 
 def agent_pack(n, seed=0, rounds=12, shrink=0.02, min_shrink=2e-4, max_fail=40,
-               use=("hop", "slide", "coalition"), actors=3, finish=True, verbose=False):
-    """Pack n squares from a random gas with the agent behaviours. Returns (x, y, t, L, stats)."""
+               use=("hop", "slide", "coalition"), actors=3, organize=0.0, organize_decay=0.95,
+               finish=True, verbose=False):
+    """Pack n squares from a random gas with the agent behaviours. Returns (x, y, t, L, stats).
+
+    organize > 0 switches on the organizing reward with that weight; it is multiplied by
+    organize_decay after every successful shrink, so it shapes the early layout and fades out.
+    """
     rng = np.random.default_rng(seed)
-    ag = AgentPacker(n, rng)
+    ag = AgentPacker(n, rng, organize=organize)
     x, y, t, L = random_gas(n, rng)
     # Loose start: relax until feasible.
     x, y, t, e = ag.relax(x, y, t, L, iters=3000)
@@ -319,6 +458,7 @@ def agent_pack(n, seed=0, rounds=12, shrink=0.02, min_shrink=2e-4, max_fail=40,
         if e == 0.0 and feasible(x, y, t, Lt):
             best = (x, y, t, Lt)
             step = min(step * 1.3, shrink)
+            ag.organize *= organize_decay
             if verbose:
                 print(f"  L={Lt:.4f}  step={step:.4f}  {ag.stats}")
         else:

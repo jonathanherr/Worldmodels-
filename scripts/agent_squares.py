@@ -3,7 +3,8 @@
     python -m scripts.agent_squares --n 5-40 --seeds 4 --modes all,none,hop,slide,coalition \
         --out /mnt/project-files/squares/agents/run1.json [--actors 10 --rounds 30] [--offer]
 
-Mode `all` uses every behaviour, `none` the same shrink schedule with gradient relaxation only,
+Mode `all` uses hop, slide and coalition; `rot` adds the rotate action, `org` the organizing
+reward (weight --organize), `orgrot` both; `none` the same shrink schedule with gradient relaxation only,
 `control` the random gas -> compact_squeeze baseline. Each result is compared with the shared
 store ($SQUARES_BEST_DIR) and the public record store; --offer sends wins to the shared store.
 """
@@ -21,8 +22,11 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 import numpy as np
 
 RECORDS = Path("/mnt/project-files/squares/public-certs/store")
-MODES = {"all": ("hop", "slide", "coalition"), "none": (), "hop": ("hop",),
-         "slide": ("slide",), "coalition": ("coalition",)}
+ALL = ("hop", "slide", "coalition")
+# mode -> (behaviours, organizing reward on?)
+MODES = {"all": (ALL, False), "none": ((), False), "hop": (("hop",), False),
+         "slide": (("slide",), False), "coalition": (("coalition",), False),
+         "rot": (ALL + ("rotate",), False), "org": (ALL, True), "orgrot": (ALL + ("rotate",), True)}
 
 
 def parse_ns(spec):
@@ -37,7 +41,7 @@ def parse_ns(spec):
 
 
 def job(args):
-    n, seed, mode, actors, rounds = args
+    n, seed, mode, actors, rounds, organize = args
     from wm.agentpack import agent_pack, control_pack
     from wm.squares import official_check
 
@@ -46,7 +50,9 @@ def job(args):
         x, y, t, L = control_pack(n, seed=seed)
         stats = {}
     else:
-        x, y, t, L, stats = agent_pack(n, seed=seed, use=MODES[mode], actors=actors, rounds=rounds)
+        use, org = MODES[mode]
+        x, y, t, L, stats = agent_pack(n, seed=seed, use=use, actors=actors, rounds=rounds,
+                                       organize=organize if org else 0.0)
     rows = [{"id": k, "n": n, "square_id": k, "x": float(x[k]), "y": float(y[k]),
              "angle": float(t[k])} for k in range(n)]
     chk = official_check(rows)
@@ -65,11 +71,12 @@ def main():
     ap.add_argument("--offer", action="store_true")
     ap.add_argument("--actors", type=int, default=3, help="stressed agents that act per round")
     ap.add_argument("--rounds", type=int, default=12, help="negotiation rounds per box size")
+    ap.add_argument("--organize", type=float, default=0.01, help="organizing reward weight (org modes)")
     a = ap.parse_args()
 
     from wm import best_store
 
-    jobs = [(n, s, m, a.actors, a.rounds) for n in parse_ns(a.n) for s in range(a.seeds) for m in a.modes.split(",")]
+    jobs = [(n, s, m, a.actors, a.rounds, a.organize) for n in parse_ns(a.n) for s in range(a.seeds) for m in a.modes.split(",")]
     jobs.sort(key=lambda j: -j[0])  # big n first for load balance
     results = []
     with Pool(a.workers) as pool:

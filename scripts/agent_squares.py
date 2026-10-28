@@ -1,7 +1,7 @@
 """Sweep the one-agent-per-square packer (wm/agentpack.py) over n and seeds, with ablations.
 
     python -m scripts.agent_squares --n 5-40 --seeds 4 --modes all,none,hop,slide,coalition \
-        --out /mnt/project-files/squares/agents/run1.json [--offer]
+        --out /mnt/project-files/squares/agents/run1.json [--actors 10 --rounds 30] [--offer]
 
 Mode `all` uses every behaviour, `none` the same shrink schedule with gradient relaxation only,
 `control` the random gas -> compact_squeeze baseline. Each result is compared with the shared
@@ -37,7 +37,7 @@ def parse_ns(spec):
 
 
 def job(args):
-    n, seed, mode = args
+    n, seed, mode, actors, rounds = args
     from wm.agentpack import agent_pack, control_pack
     from wm.squares import official_check
 
@@ -46,7 +46,7 @@ def job(args):
         x, y, t, L = control_pack(n, seed=seed)
         stats = {}
     else:
-        x, y, t, L, stats = agent_pack(n, seed=seed, use=MODES[mode])
+        x, y, t, L, stats = agent_pack(n, seed=seed, use=MODES[mode], actors=actors, rounds=rounds)
     rows = [{"id": k, "n": n, "square_id": k, "x": float(x[k]), "y": float(y[k]),
              "angle": float(t[k])} for k in range(n)]
     chk = official_check(rows)
@@ -63,11 +63,13 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--out", required=True)
     ap.add_argument("--offer", action="store_true")
+    ap.add_argument("--actors", type=int, default=3, help="stressed agents that act per round")
+    ap.add_argument("--rounds", type=int, default=12, help="negotiation rounds per box size")
     a = ap.parse_args()
 
     from wm import best_store
 
-    jobs = [(n, s, m) for n in parse_ns(a.n) for s in range(a.seeds) for m in a.modes.split(",")]
+    jobs = [(n, s, m, a.actors, a.rounds) for n in parse_ns(a.n) for s in range(a.seeds) for m in a.modes.split(",")]
     jobs.sort(key=lambda j: -j[0])  # big n first for load balance
     results = []
     with Pool(a.workers) as pool:

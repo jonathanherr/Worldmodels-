@@ -254,7 +254,7 @@ class AgentPacker:
         return x, y, t, False
 
     # -- one negotiation round at a fixed box ------------------------------------------------
-    def negotiate(self, x, y, t, L, rounds, use=("hop", "slide", "coalition")):
+    def negotiate(self, x, y, t, L, rounds, use=("hop", "slide", "coalition"), actors=3):
         x, y, t, e = self.relax(x, y, t, L)
         for r in range(rounds):
             if e == 0.0:
@@ -262,7 +262,7 @@ class AgentPacker:
             s = stress(x, y, t, L, self.margin)
             order = np.argsort(-s)
             temp = 0.3 * e * (1 - r / rounds)
-            for i in order[:3]:
+            for i in order[:actors]:
                 if s[i] <= 0:
                     break
                 self.stats["tries"] += 1
@@ -299,7 +299,7 @@ def random_gas(n, rng, density=0.45):
 
 
 def agent_pack(n, seed=0, rounds=12, shrink=0.02, min_shrink=2e-4, max_fail=40,
-               use=("hop", "slide", "coalition"), finish=True, verbose=False):
+               use=("hop", "slide", "coalition"), actors=3, finish=True, verbose=False):
     """Pack n squares from a random gas with the agent behaviours. Returns (x, y, t, L, stats)."""
     rng = np.random.default_rng(seed)
     ag = AgentPacker(n, rng)
@@ -315,7 +315,7 @@ def agent_pack(n, seed=0, rounds=12, shrink=0.02, min_shrink=2e-4, max_fail=40,
         bx, by, bt, bL = best
         Lt = bL * (1 - step)
         k = Lt / bL
-        x, y, t, e = ag.negotiate(bx * k, by * k, bt.copy(), Lt, rounds, use)
+        x, y, t, e = ag.negotiate(bx * k, by * k, bt.copy(), Lt, rounds, use, actors)
         if e == 0.0 and feasible(x, y, t, Lt):
             best = (x, y, t, Lt)
             step = min(step * 1.3, shrink)

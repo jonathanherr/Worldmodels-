@@ -45,16 +45,31 @@ BOARD = Path(os.environ.get("PROGSEARCH_BOARD", "/mnt/project-files/squares/prog
 TARGETS = {147: 12.651043553627, 299: 17.802718854399, 335: 18.794904187687, 412: 20.798165581954}
 
 TASKS = {
+    # Fault-line gadgets (wm.fault_dp): the program builds a small packing; every corner crop of it
+    # joins the gadget pool of the base submission and the DP is rerun, so the score is the points
+    # the whole file would gain (verified with the official metric). See wm/gadget_search.py.
+    "gadget": {"kind": "gadget", "ns": [],
+               "goal": "Build a gadget: m = w*h + d unit squares in the rectangle [0, w + f] x [0, h + f] with "
+                       "f as small as you can. Set KEY = (w, h, d) in your file. The fault-line DP chains gadgets "
+                       "along a staircase in a K x K grid, so a low-f gadget improves every n = K^2 + sum(d) whose "
+                       "best chain can use it. `python -m scripts.gadget_search table` lists the (w, h, d) worth "
+                       "the most points and the best f known for each."},
+    # Whole-construction tasks: the program builds all n squares from scratch. "hide": the record's
+    # layout is withheld (ctx["original"] is empty), so programs cannot anchor to its basin.
+    "construct335": {"ns": [335], "select": "all", "corner": "bl", "size": None, "hide": True,
+                     "goal": "Build the whole packing of 335 squares in a box of side below 18.8229 (another team "
+                             "reached 18.7949). 335 = 18^2 + 11: eleven squares more than the 18 x 18 grid, about "
+                             "2.7 squares per unit of staircase; the 299/412 strip design does not carry over."},
     # Whole-construction tasks: the program builds all n squares from scratch (it may start from the
     # record in ctx["original"]). Pilot 2 showed the 299/335/412 strip is a local optimum of its own
     # design (g = (sqrt7 - 1)/2 from dominoes spanning one staircase step), so a win needs a new
     # design, staircases included; scoring one program on the whole family keeps it general.
-    "construct-strip": {"ns": [299, 335, 412], "select": "all", "corner": "bl", "size": None,
+    "construct-strip": {"ns": [299, 412], "select": "all", "corner": "bl", "size": None, "hide": True,
                         "goal": "Build the whole packing of n squares (a construction that works for every n "
                                 "in the family). The record is a two-wide strip at 24.3 degrees between two "
                                 "axis-aligned staircases, provably optimal for that design; beat it with a "
                                 "different design."},
-    "construct147": {"ns": [147], "select": "all", "corner": "bl", "size": None,
+    "construct147": {"ns": [147], "select": "all", "corner": "bl", "size": None, "hide": True,
                      "goal": "Build the whole packing of 147 squares. The record is the 148 layout (45-degree "
                              "8x8 diamond in an axis frame) minus one corner square; beat it with a different design."},
     # Whole-block tasks: the tilted block is the program's, the axis-aligned frame stays. Deleting
@@ -106,7 +121,7 @@ def to_global(lx, ly, ld, L, corner):
 
 
 def make_ctx(n: int, corner: str, size: float | None, seed_dir: Path = SEED_DIR, goal: str = "",
-             select: str = "window") -> dict:
+             select: str = "window", hide: bool = False) -> dict:
     """select="window": squares centred in the size x size corner window; "tilted": every square not
     axis-aligned (size becomes the box side and the frame is the box's own, bl corner)."""
     x, y, t, L = load_seed(n, seed_dir)
@@ -127,7 +142,7 @@ def make_ctx(n: int, corner: str, size: float | None, seed_dir: Path = SEED_DIR,
                     for a, b, c in zip(lx[m], ly[m], ld[m])]
     return {"n": n, "corner": corner, "size": size, "side": L, "k": int(inside.sum()),
             "target_side": TARGETS.get(n), "goal": goal,
-            "original": sq(inside), "frozen": sq(near), "_inside": inside.tolist()}
+            "original": [] if hide else sq(inside), "frozen": sq(near), "_inside": inside.tolist()}
 
 
 RUNNER = r"""
@@ -141,12 +156,14 @@ mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 ctx = json.load(open(sys.argv[2]))
 out = [[float(a), float(b), float(c)] for a, b, c in mod.build(ctx)]
+print("KEY" + json.dumps(getattr(mod, "KEY", None)))
 print("RESULT" + json.dumps(out))
 """
 
 
-def run_program(path: Path, ctx: dict, cpu_seconds: int = 60) -> list:
-    """Run build(ctx) from the program file in a subprocess; returns its (x, y, deg) list."""
+def run_program(path: Path, ctx: dict, cpu_seconds: int = 60, with_key: bool = False):
+    """Run build(ctx) from the program file in a subprocess; returns its (x, y, deg) list
+    (and the file's KEY, if with_key)."""
     tmp = Path(os.environ.get("TMPDIR", "/tmp")) / f"progsearch_ctx_{os.getpid()}_{ctx['n']}.json"
     tmp.write_text(json.dumps({k: v for k, v in ctx.items() if not k.startswith("_")}))
     try:
@@ -157,7 +174,11 @@ def run_program(path: Path, ctx: dict, cpu_seconds: int = 60) -> list:
     line = next((s for s in p.stdout.splitlines() if s.startswith("RESULT")), None)
     if line is None:
         raise RuntimeError((p.stderr or p.stdout).strip()[-2000:] or f"exit code {p.returncode}")
-    return json.loads(line[6:])
+    out = json.loads(line[6:])
+    if with_key:
+        key = next((s for s in p.stdout.splitlines() if s.startswith("KEY")), "KEYnull")
+        return out, json.loads(key[3:])
+    return out
 
 
 def assemble(ctx: dict, squares: list, seed_dir: Path = SEED_DIR):
@@ -206,9 +227,12 @@ def evaluate(path: Path, task: str, seed_dir: Path = SEED_DIR, cpu_seconds: int 
              offer_root: Path | None = None) -> dict:
     """Score one program on every n of a task. Wins are offered to the store at offer_root, if given."""
     spec = TASKS[task]
+    if spec.get("kind") == "gadget":
+        return evaluate_gadget(path, task, cpu_seconds, offer_root)
     per_n, total = {}, 0.0
     for n in spec["ns"]:
-        ctx = make_ctx(n, spec["corner"], spec["size"], seed_dir, spec["goal"], spec.get("select", "window"))
+        ctx = make_ctx(n, spec["corner"], spec["size"], seed_dir, spec["goal"], spec.get("select", "window"),
+                       spec.get("hide", False))
         t0 = time.time()
         try:
             sq = run_program(Path(path), ctx, cpu_seconds)
@@ -229,6 +253,64 @@ def evaluate(path: Path, task: str, seed_dir: Path = SEED_DIR, cpu_seconds: int 
         per_n[n] = res
         total += r["gain"] if r["ok"] else -1.0
     return {"task": task, "score": total, "per_n": per_n}
+
+
+POOL = Path(os.environ.get("PROGSEARCH_POOL", "/mnt/project-files/squares/gadgets/pool.pkl"))
+_POOL: dict = {}
+
+
+def gadget_pool() -> dict:
+    """The gadget pool of the base submission, built once by `scripts.gadget_search pool`."""
+    if not _POOL:
+        from . import gadget_search
+        _POOL.update(gadget_search.build_pool(None, cache=POOL))
+    return _POOL
+
+
+def evaluate_gadget(path: Path, task: str, cpu_seconds: int = 60, offer_root: Path | None = None) -> dict:
+    """Score a gadget program by the points the fault-line DP gains with its crops in the pool.
+
+    The program's squares are normalized to the origin and checked for overlaps; with a KEY
+    (w, h, d) they are first squeezed to the smallest feasible f for that rectangle. Score =
+    official-metric-verified gain over the base file (the DP's prediction is reported too).
+    """
+    from . import gadget_opt, gadget_search
+    from .fault_dp import half_ext, normalize, side_of
+
+    pool = gadget_pool()
+    ctx = {"n": 0, "goal": TASKS[task]["goal"]}
+    try:
+        sq, key = run_program(Path(path), ctx, cpu_seconds, with_key=True)
+        p = normalize(np.array([[a, b, math.radians(c)] for a, b, c in sq]))
+        res = {"m": len(p), "key": key}
+        if key:
+            w, h, d = (int(v) for v in key)
+            if len(p) != w * h + d:
+                raise ValueError(f"KEY {key} needs {w * h + d} squares, build() returned {len(p)}")
+            f0 = gadget_search.gadget_f(p, w, h)
+            out = gadget_opt.squeeze(p[:, 0], p[:, 1], p[:, 2], w, h, f0 + 1e-6, rounds=40, step=1e-3)
+            if out is not None and gadget_opt.feasible(*out[:3], w, h, out[3]):
+                p = normalize(np.stack(out[:3], 1))
+            elif not gadget_opt.feasible(p[:, 0], p[:, 1], p[:, 2], w, h, f0 + 1e-9):
+                raise ValueError("squares overlap and the squeeze could not separate them")
+            res.update(f=gadget_search.gadget_f(p, w, h), best_known_f=gadget_search.best_known(pool, w, h, d))
+        elif not feasible(p[:, 0], p[:, 1], p[:, 2], side_of(p) + 1e-9, MARGIN):
+            raise ValueError("squares overlap (set KEY to have them squeezed for a gadget rectangle)")
+        r = gadget_search.score_packing(pool, p)
+        rows = {}
+        ok = gadget_search.verify_wins(r, rows) if r["wins"] else {}
+        sides = pool["sides"]
+        gain = sum((sides[n] - s) / math.sqrt(n) for n, s in ok.items())
+        res.update(predicted=r["gain"], verified=gain,
+                   wins={str(n): [sides[n], s] for n, s in sorted(ok.items())})
+        if offer_root is not None:
+            for n in ok:
+                a = np.array([[float(q["x"]), float(q["y"]), float(q["angle"])] for q in rows[n]])
+                best_store.offer(n, a[:, 0], a[:, 1], np.degrees(a[:, 2]), f"progsearch:{task}", root=offer_root)
+        np.save(Path(path).with_suffix(".npy"), p)
+        return {"task": task, "score": gain, "per_n": {"gadget": res}}
+    except Exception as ex:
+        return {"task": task, "score": -1.0, "per_n": {"gadget": {"ok": False, "error": str(ex)[-600:]}}}
 
 
 # ---------------- board: programs and scores as files

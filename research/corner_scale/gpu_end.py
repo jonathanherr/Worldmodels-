@@ -229,7 +229,7 @@ def seed_run(r, f, phi, S, J, B, extra):
     act[:, :n] = True
     # seed: relax the DP gadget at the slightly larger tilt, then squeeze it
     c = torch.full((B,), S.c + 1e-3, dtype=DT, device=DEV)
-    x, y, t, worst = G.fire(x, y, t, c, act, 1000)
+    x, y, t, worst = G.fire(x, y, t, c, act, 4000)
     ok = worst <= 0
     c = torch.where(ok, G.creq(x, y, t, act) + MARGIN_GPU, c)
     x, y, t, c = G.squeeze(x, y, t, c, act, ok, 12, 200)

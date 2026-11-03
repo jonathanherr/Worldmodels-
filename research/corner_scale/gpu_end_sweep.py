@@ -17,7 +17,7 @@ if __name__ == '__main__':
             w0, wb = run(r, f, minutes, outdir, B)
             H = r + f
             rows.append((r, f, w0 / H, (wb / H) if wb is not None else None))
-            with open(os.path.join(outdir, 'summary.json'), 'w') as fh:
+            with open(os.path.join(outdir, f'summary_r{r0}-{r1}.json'), 'w') as fh:
                 json.dump(rows, fh)
     print('r     f   dp/row  gpu/row')
     for r, f, a, b in rows:

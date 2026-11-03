@@ -192,18 +192,35 @@ def tilt(r, f, slack):
     return brentq(lambda p: (r + 1) * math.cos(p) + math.sin(p) - (r + f - slack), 1e-9, 1.4)
 
 
-def run(r, f, minutes, outdir, B=512, seed=0, extra=8, rsteps=300, sq_rounds=8, sq_steps=150,
-        T0=0.15, T1=0.01):
-    torch.manual_seed(seed)
-    gen = torch.Generator(device=DEV); gen.manual_seed(seed)
+def loose_dp(r, f, na=41, noff=9, room=3e-5):
+    """dpbuild.best_dp, but row stacks and column segments must leave `room` of height."""
     import research.corner_scale.seqend as seqend
-    phi = tilt(r, f, COL_SLACK)
-    seqend.phi_for = lambda r_, f_: tilt(r_, f_, COL_SLACK)   # build the DP seed at the search tilt
-    w0, S, J, N0, kind = best_dp(r, f)
+    import research.corner_scale.dpbuild as dpbuild
+    from research.corner_scale.dpend import col_fit
+    from research.corner_scale.seqend import Seq
+    seqend.col_fit = dpbuild.col_fit = lambda a, y0, y1, cs, sn, m: col_fit(a, y0, y1 - room, cs, sn, m)
+    try:
+        phi = seqend.phi_for(r, f); hs = (r + f) * math.sin(phi)
+        Jmax = int(math.ceil(hs)) + 6
+        best = None
+        for a0 in np.linspace(-hs - 1.5, -hs - 0.5, na):
+            for off in np.linspace(0, f - room, noff):
+                S = Seq(r, f, a0, off, Jmax)
+                for kind in ('dec', 'inc'):
+                    J, N = dpbuild.dp_seq(S, kind)
+                    w = S.waste(N)
+                    if best is None or w < best[0]:
+                        best = (w, S, J)
+    finally:
+        seqend.col_fit = dpbuild.col_fit = col_fit
+    return best[1], best[2]
+
+
+def seed_run(r, f, phi, S, J, B, extra):
+    """Relax and squeeze the DP gadget on the GPU; return the best copy broadcast to B, or None."""
     sq = squares(S, J)
     G = Batch(r, f, phi, B, len(sq) + extra)
     Nmax, n = G.Nmax, len(sq)
-    out = os.path.join(outdir, f'end_r{r}_f{f:.2f}.json')
     x = torch.full((B, Nmax), -50.0, device=DEV, dtype=DT); y = x.clone(); t = torch.zeros_like(x)
     act = torch.zeros(B, Nmax, dtype=torch.bool, device=DEV)
     x[:, :n] = torch.tensor(sq[:, 0], dtype=DT, device=DEV)
@@ -218,9 +235,30 @@ def run(r, f, minutes, outdir, B=512, seed=0, extra=8, rsteps=300, sq_rounds=8, 
     x, y, t, c = G.squeeze(x, y, t, c, act, ok, 12, 200)
     k = int(torch.argmin(torch.where(ok, c, torch.full_like(c, 1e9))))
     if not bool(ok[k]):
-        print(f'r={r} f={f}: DP seed not feasible on GPU', flush=True); return w0, None
+        return None
     x, y, t, c = [v[k:k + 1].expand(B, *v.shape[1:]).clone() for v in (x, y, t, c)]
     act = act[k:k + 1].expand(B, Nmax).clone()
+    return G, x, y, t, c, act
+
+
+def run(r, f, minutes, outdir, B=512, seed=0, extra=8, rsteps=300, sq_rounds=8, sq_steps=150,
+        T0=0.15, T1=0.01):
+    torch.manual_seed(seed)
+    gen = torch.Generator(device=DEV); gen.manual_seed(seed)
+    import research.corner_scale.seqend as seqend
+    phi = tilt(r, f, COL_SLACK)
+    seqend.phi_for = lambda r_, f_: tilt(r_, f_, COL_SLACK)   # build the DP seed at the search tilt
+    w0, S, J, N0, kind = best_dp(r, f)
+    w = seed_run(r, f, phi, S, J, B, extra)
+    if w is None:
+        # exact fits elsewhere (rows stacked off..H when off = f, a truncated column wall to ceiling)
+        # are also infeasible with a margin: rebuild the seed with a little room for both
+        w = seed_run(r, f, phi, *loose_dp(r, f), B, extra)
+    if w is None:
+        print(f'r={r} f={f}: DP seed not feasible on GPU', flush=True); return w0, None
+    G, x, y, t, c, act = w
+    Nmax = G.Nmax
+    out = os.path.join(outdir, f'end_r{r}_f{f:.2f}.json')
     cur = (x, y, t, c, act); cw = G.waste(act.sum(1).to(DT), c)
     a = act[0].cpu().numpy()
     res = cpu_check(r, f, phi, x[0].cpu().numpy()[a], y[0].cpu().numpy()[a], t[0].cpu().numpy()[a], float(c[0]))

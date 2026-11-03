@@ -15,3 +15,17 @@ First run (our best file 22.337944 + 332 Couzo certs with n > 1000):
 - Band-model screen with the best end used at both ends, k 12-31: 0 n beat the leaders, 0 beat ours.
 - So c alone is the wrong label: an end's value depends on (phi, f, r) jointly. Label ends by the
   m they allow at each k, not by c.
+
+## Synthetic ends, critic and GA (2026-11-03, cloud CPU)
+
+- `synth_ends.py dp`: exact DP ends for r 5-20, f 0.45-1.00 step 0.005, 80 a0 x 8 offsets x 2 kinds
+  = 2.27M ends (dp_r*.npz, ~2 min on 4 cores). `rescan.py`: one-band designs for every k^2+m,
+  k <= 31: 0 wins; closest are 1-2 squares short (k^2+1 at k 20-31 with r=8, f .52-.535).
+- `synth_ends.py squeeze`: CPU Gadget.squeeze of the best DP ends moves the face by <= 0.011
+  (66 ends), far from the ~1 needed for an extra column. Set OMP/OPENBLAS/NUMBA threads to 1 or
+  each squeeze takes 330 s instead of 5 s.
+- `ga_ends.py`: insert/relocate moves on near-miss ends, online gradient-boosting critic, scored
+  by band count. 78 min, 2,102 exact evals, 56 improved ends (27 with an extra square), best
+  0.3815/row at r=8 f=.535. Shortfalls: n=962 and n=577 went from 2 to 1 square short; 0 wins.
+- Critic: held-out rank correlation 0.59 on waste change (mostly feasibility), but its picks
+  gained less often than random (2.6% vs 4.5%). Hole features don't predict which inserts pay.

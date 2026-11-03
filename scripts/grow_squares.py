@@ -34,17 +34,22 @@ def configs(grid):
                                            ["iso", "side", "free", "corner"]):
             yield dict(k=k, adjacency=adj, direction=d, rate="equal", pick="random")
     elif grid == "rate":  # rate rules x group picks, push and local adjacency
-        for k, pick, rate, adj in itertools.product(["three", "quarter"], ["random", "smallest", "cluster"],
+        for k, pick, rate, adj in itertools.product(["three", "quarter"], ["random", "smallest", "cluster", "void"],
                                                     ["equal", "random", "contacts", "localmin"],
                                                     ["push", "local"]):
             yield dict(k=k, adjacency=adj, direction="iso", rate=rate, pick=pick)
         for rate, adj in itertools.product(["random", "contacts", "localmin"], ["push", "local", "independent"]):
             yield dict(k="all", adjacency=adj, direction="iso", rate=rate, pick="random")
+        for k, d in itertools.product(["one", "three", "quarter"], ["iso", "free"]):  # gap-guided growth
+            yield dict(k=k, adjacency="push", direction=d, rate="equal", pick="void")
     elif grid == "band":  # how unequal sizes may get, plus axis-aligned seeds
         for band, k, angles in itertools.product([0.005, 0.02, 0.05, 0.2, 1.0, float("inf")],
                                                  ["one", "quarter", "all"], ["random", "zero"]):
             yield dict(k=k, adjacency="push", direction="iso", rate="equal", pick="random", band=band,
                        angles=angles)
+    elif grid == "control":  # no growth: random gas at density ~0.6 or ~0.3, straight to squeeze/compact
+        for dens in (0.3, 0.6):
+            yield dict(k="none", adjacency="-", direction="-", rate="-", pick="-", density=dens)
     else:
         raise ValueError(grid)
 
@@ -52,7 +57,10 @@ def configs(grid):
 def run(job):
     n, seed, c = job
     c = dict(c)
-    cfg = GrowConfig(k=k_value(c["k"], n), pick=c["pick"], direction=c["direction"], rate=c["rate"],
+    extra = {}
+    if c["k"] == "none":
+        extra = dict(max_steps=0, s0=math.sqrt(c["density"] / n))
+    cfg = GrowConfig(**extra, k=k_value(c["k"], n) if c["k"] != "none" else 0, pick=c["pick"], direction=c["direction"], rate=c["rate"],
                      adjacency=c["adjacency"], band=c.get("band", 0.05), angles=c.get("angles", "random"),
                      seed=seed)
     t0 = time.time()

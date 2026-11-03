@@ -240,7 +240,7 @@ def contacts(x, y, t, s, gap):
 @dataclass
 class GrowConfig:
     k: int = 0               # squares growing per step; 0 = all
-    pick: str = "random"     # random | smallest | cluster
+    pick: str = "random"     # random | smallest | cluster | void (squares facing the biggest gaps)
     direction: str = "iso"   # iso | side | free | corner
     rate: str = "equal"      # equal | random | contacts | localmin
     adjacency: str = "push"  # push | local | nopush | independent
@@ -254,6 +254,7 @@ class GrowConfig:
     rotw: float = 0.3        # angle weight in the relaxation dynamics
     tol: float = 1e-6        # accepted residual depth, relative to min(s)
     seed: int = 0
+    s0: float = 0.0          # seed side (0 = 0.15 / sqrt(n)); with max_steps=0 this is a no-growth control
     record: int = 0          # keep a snapshot every `record` accepted steps (0 = off)
 
 
@@ -286,7 +287,7 @@ def _wall_room(x, y, t, s, i, others):
 def grow(n: int, cfg: GrowConfig):
     """Run one growth simulation. Returns dict with x, y, t, s (box [0,1]^2) and stats."""
     rng = np.random.default_rng(cfg.seed)
-    s0 = 0.15 / np.sqrt(n)
+    s0 = cfg.s0 if cfg.s0 > 0 else 0.15 / np.sqrt(n)
     x = rng.uniform(s0, 1 - s0, n)
     y = rng.uniform(s0, 1 - s0, n)
     t = rng.uniform(0, np.pi / 2, n) if cfg.angles == "random" else np.zeros(n)
@@ -322,6 +323,10 @@ def grow(n: int, cfg: GrowConfig):
             G = idx
         elif cfg.pick == "smallest":
             G = idx[np.argsort(s[idx] + 1e-9 * rng.random(idx.size))[:k]]
+        elif cfg.pick == "void":  # squares facing the biggest gaps grow first
+            room = np.array([_wall_room(x, y, t, s, i, np.flatnonzero(np.arange(n) != i)).max() - 0.5 * s[i]
+                             for i in idx])
+            G = idx[np.argsort(-room + 1e-9 * rng.random(idx.size))[:k]]
         elif cfg.pick == "cluster":
             c = rng.choice(idx)
             d = (x[idx] - x[c]) ** 2 + (y[idx] - y[c]) ** 2

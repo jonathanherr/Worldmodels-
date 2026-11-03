@@ -1,0 +1,221 @@
+<title>Growing Squares Until They Jam</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a lab notebook page. Controls bar, then a grid of small-multiple boxes that play in sync, then the sweep tables. */
+:root {
+  --bg: #f3f4ef; --panel: #fbfbf8; --ink: #1d2320; --muted: #5d6862; --rule: #d5d9d1;
+  --sq: #3f6f8f; --sq-big: #b6612f; --grow: #e0a526; --ref: #6a8a4a; --box: #1d2320; --void: #8fa39a; --hole: #7d4e8a; --solid: #26302b; --crack: #e9c46a;
+  --display: "Fraunces", Georgia, serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #151a18; --panel: #1d2320; --ink: #e6e9e3; --muted: #9aa59f; --rule: #333b37;
+  --sq: #6fa3c4; --sq-big: #e08b55; --grow: #f2c14e; --ref: #9cc27a; --box: #e6e9e3; --void: #5f7a70; --hole: #b48ad0; --solid: #2a322e; --crack: #e9c46a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #151a18; --panel: #1d2320; --ink: #e6e9e3; --muted: #9aa59f; --rule: #333b37;
+  --sq: #6fa3c4; --sq-big: #e08b55; --grow: #f2c14e; --ref: #9cc27a; --box: #e6e9e3; --void: #5f7a70; --hole: #b48ad0; --solid: #2a322e; --crack: #e9c46a; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 22px; }
+h1 { font-family: var(--display); font-weight: 650; font-size: clamp(28px, 4.5vw, 42px); line-height: 1.1; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 500; font-size: 24px; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); font-size: 16px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+button { font: 500 14px var(--body); color: var(--bg); background: var(--ink); border: 0; border-radius: 4px; padding: 7px 14px; cursor: pointer; min-width: 76px; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--grow); outline-offset: 2px; }
+label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+input[type=range] { width: min(260px, 50vw); accent-color: var(--grow); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; margin-right: 6px; vertical-align: -1px; border-radius: 2px; background: var(--c); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+.cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cell canvas { width: 100%; aspect-ratio: 1; max-width: 100%; background: var(--panel); border-radius: 4px; }
+.cell h3 { font: 600 14px/1.3 var(--body); margin: 0; min-height: 2.6em; }
+.stats { font: 400 12.5px/1.45 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.stats b { color: var(--ink); font-weight: 500; }
+.ref h3 { color: var(--ref); }
+section { display: flex; flex-direction: column; gap: 12px; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 12px; text-align: right; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 600; color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+tr:last-child td { border-bottom: 0; }
+.bar { display: inline-block; height: 8px; background: var(--sq); border-radius: 2px; vertical-align: 0; margin-left: 8px; }
+.note { font-size: 13.5px; color: var(--muted); }
+</style>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:10px">
+    <h1>Growing squares until they jam</h1>
+    <p class="lede">Each box starts with __N__ tiny squares at random places and angles. A rule picks which squares grow each step, how, and who gets pushed. When nothing can grow, every square shrinks to the smallest one, and that state is squeezed into the tightest box it allows. Smaller box side is better; the last panel is our best known packing for n = __N__.</p>
+  </header>
+
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <label for="scrub">Progress <input id="scrub" type="range" min="0" max="1000" value="0"></label>
+    <label for="speed">Speed <input id="speed" type="range" min="1" max="20" value="6"></label>
+    <label for="view">View <select id="view">
+      <option value="shade" selected>Squares + shaded gaps</option>
+      <option value="plain">Squares only</option>
+    </select></label>
+    <div class="legend">
+      <span data-m="shade plain" style="--c: var(--grow)">growing this step</span>
+      <span data-m="shade plain" style="--c: var(--sq)">smallest</span>
+      <span data-m="shade plain" style="--c: var(--sq-big)">largest</span>
+      <span data-m="shade" style="--c: var(--void)">gap (darker = wider)</span>
+      <span data-m="shade" style="--c: var(--hole)">hole that fits another square</span>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+  <p class="note">Negative space is shaded by clearance: how far each empty point is from the nearest square or wall. Thin cracks are pale, wide gaps are dark, and red marks points with room for a disc as wide as the smallest square, a hole that could almost take another square. The empty share is 1 &minus; total square area / box area; for unit squares that is 1 &minus; n / L&sup2;.</p>
+  <p class="note">The animation shows growth in a unit box. At the end each panel switches to the squeezed packing of unit squares, drawn at the same scale as the record. "Jammed side" is 1 / smallest square when growth stops; "squeezed side" is after the FIRE squeeze.</p>
+
+  __RESULTS__
+</div>
+
+<script>
+const DATA = __DATA__;
+const REF = __REF__;
+const grid = document.getElementById("grid");
+const css = getComputedStyle(document.documentElement);
+let colors = {};
+function readColors() { for (const k of ["sq", "sq-big", "grow", "ref", "box", "panel", "muted", "void", "hole", "solid", "crack"]) colors[k] = css.getPropertyValue("--" + k).trim(); }
+readColors();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); drawAll(); });
+new MutationObserver(() => { readColors(); drawAll(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+function mix(a, b, f) {
+  const p = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  const A = p(a), B = p(b);
+  return "rgb(" + A.map((v, i) => Math.round(v + (B[i] - v) * f)).join(",") + ")";
+}
+
+const cells = [];
+function addCell(label, cls) {
+  const div = document.createElement("div");
+  div.className = "cell " + (cls || "");
+  div.innerHTML = `<canvas width="500" height="500"></canvas><h3></h3><div class="stats"></div>`;
+  div.querySelector("h3").textContent = label;
+  grid.appendChild(div);
+  return { canvas: div.querySelector("canvas"), stats: div.querySelector(".stats") };
+}
+DATA.runs.forEach(r => cells.push(Object.assign(addCell(r.label), { run: r })));
+const refCell = addCell("Best known packing (record file)", "ref");
+
+function drawSquares(ctx, W, xs, ys, ts, size, fill) {
+  for (let i = 0; i < xs.length; i++) {
+    ctx.save();
+    ctx.translate(xs[i] * W, (1 - ys[i]) * W);
+    ctx.rotate(-ts[i]);
+    const h = size(i) * W / 2;
+    ctx.fillStyle = fill(i);
+    ctx.fillRect(-h, -h, 2 * h, 2 * h);
+    ctx.restore();
+  }
+}
+const VR = 110, voidCanvas = document.createElement("canvas");
+voidCanvas.width = voidCanvas.height = VR;
+const vctx = voidCanvas.getContext("2d"), vimg = vctx.createImageData(VR, VR);
+function rgb(c) { return [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); }
+function drawVoid(ctx, W, xs, ys, ts, size, sref) {
+  if (viewSel.value === "plain") return null;
+  const n = xs.length, cs = ts.map(Math.cos), sn = ts.map(Math.sin), hs = xs.map((_, i) => size(i) / 2);
+  const V = rgb(colors.void), H = rgb(colors.hole), d = vimg.data;
+  let empty = 0;
+  for (let py = 0; py < VR; py++) for (let px = 0; px < VR; px++) {
+    const X = (px + 0.5) / VR, Y = 1 - (py + 0.5) / VR;
+    let c = Math.min(X, Y, 1 - X, 1 - Y);
+    for (let i = 0; i < n && c > 0; i++) {
+      const dx = X - xs[i], dy = Y - ys[i];
+      if (Math.abs(dx) > c + 0.72 * size(i) || Math.abs(dy) > c + 0.72 * size(i)) continue;
+      const u = Math.abs(dx * cs[i] + dy * sn[i]) - hs[i], v = Math.abs(-dx * sn[i] + dy * cs[i]) - hs[i];
+      const dist = u <= 0 && v <= 0 ? -1 : Math.hypot(Math.max(u, 0), Math.max(v, 0));
+      if (dist < c) c = dist;
+    }
+    const o = 4 * (py * VR + px);
+    if (c <= 0) { d[o + 3] = 0; continue; }
+    empty++;
+    const f = c / (sref / 2);
+    const C = f >= 1 ? H : V;
+    d[o] = C[0]; d[o + 1] = C[1]; d[o + 2] = C[2];
+    d[o + 3] = f >= 1 ? 150 : Math.round(40 + 170 * Math.min(1, f));
+  }
+  vctx.putImageData(vimg, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(voidCanvas, 0, 0, W, W);
+  return empty / (VR * VR);
+}
+function pieceText(v) { return ""; }
+const solidMode = () => false;
+function frameBox(ctx, W) {
+  ctx.clearRect(0, 0, W, W);
+  ctx.strokeStyle = colors.box; ctx.lineWidth = 2; ctx.strokeRect(1, 1, W - 2, W - 2);
+}
+
+let progress = 0, playing = true, hold = 0;
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function drawCell(c, p) {
+  const ctx = c.canvas.getContext("2d"), W = c.canvas.width, r = c.run;
+  frameBox(ctx, W);
+  const nf = r.frames.length;
+  if (p >= 1) {
+    const f = r.final, s = 1 / f.L;
+    const v = drawVoid(ctx, W, f.x, f.y, f.t, () => s, s);
+    if (!solidMode()) drawSquares(ctx, W, f.x, f.y, f.t, () => s * 0.985, () => colors.sq);
+    const e = 1 - f.x.length / (f.L * f.L);
+    c.stats.innerHTML = `jammed side <b>${r.side_direct.toFixed(3)}</b> &middot; squeezed <b>${f.L.toFixed(3)}</b><br>empty <b>${(100 * e).toFixed(1)}%</b> &middot; record ${REF.L.toFixed(3)} (${(100 * (1 - REF.x.length / (REF.L * REF.L))).toFixed(1)}%)` + pieceText(v);
+    return;
+  }
+  const k = Math.min(nf - 1, Math.floor(p * nf));
+  const [x, y, t, s, G] = r.frames[k];
+  const lo = Math.min(...s), hi = Math.max(...s);
+  const g = new Set(G);
+  const v = drawVoid(ctx, W, x, y, t, i => s[i], lo);
+  const area = s.reduce((a, v) => a + v * v, 0);
+  if (!solidMode()) drawSquares(ctx, W, x, y, t, i => s[i], i => g.has(i) ? colors.grow : mix(colors.sq, colors["sq-big"], hi > lo ? (s[i] - lo) / (hi - lo) : 0));
+  c.stats.innerHTML = `smallest square ${(lo).toFixed(3)} &rarr; side ${(1 / lo).toFixed(2)}<br>empty ${(100 * (1 - area)).toFixed(1)}% &middot; spread ${(hi / lo).toFixed(2)}&times; &middot; frame ${k + 1}/${nf}` + pieceText(v);
+}
+function drawRef() {
+  const ctx = refCell.canvas.getContext("2d"), W = refCell.canvas.width;
+  frameBox(ctx, W);
+  const v = drawVoid(ctx, W, REF.x, REF.y, REF.t, () => 1 / REF.L, 1 / REF.L);
+  if (!solidMode()) drawSquares(ctx, W, REF.x, REF.y, REF.t, () => 0.985 / REF.L, () => colors.ref);
+  refCell.stats.innerHTML = `side <b>${REF.L.toFixed(3)}</b> &middot; empty <b>${(100 * (1 - REF.x.length / (REF.L * REF.L))).toFixed(1)}%</b> &middot; grid side ${Math.ceil(Math.sqrt(__N__))}` + pieceText(v);
+}
+function drawAll(force = true) {
+  cells.forEach(c => {
+    const key = progress >= 1 ? -1 : Math.min(c.run.frames.length - 1, Math.floor(progress * c.run.frames.length));
+    if (force || key !== c.key) { c.key = key; drawCell(c, progress); }
+  });
+  if (force) drawRef();
+}
+
+const viewSel = document.getElementById("view");
+viewSel.addEventListener("change", () => { updateLegend(); drawAll(); });
+function updateLegend() {
+  document.querySelectorAll(".legend [data-m]").forEach(el => { el.hidden = !el.dataset.m.split(" ").includes(viewSel.value); });
+}
+updateLegend();
+const play = document.getElementById("play"), scrub = document.getElementById("scrub"), speed = document.getElementById("speed");
+play.addEventListener("click", () => { playing = !playing; play.textContent = playing ? "Pause" : "Play"; });
+scrub.addEventListener("input", () => { progress = scrub.value / 1000; playing = false; play.textContent = "Play"; drawAll(); });
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (playing) {
+    if (progress >= 1) { hold += dt; if (hold > 2.5) { progress = 0; hold = 0; } }
+    else progress = Math.min(1, progress + dt * speed.value / 60);
+    scrub.value = Math.round(progress * 1000);
+    drawAll(false);
+  }
+  requestAnimationFrame(tick);
+}
+if (reduce) { playing = false; play.textContent = "Play"; progress = 1; scrub.value = 1000; }
+drawAll();
+requestAnimationFrame(tick);
+</script>

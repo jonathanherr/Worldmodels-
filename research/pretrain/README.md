@@ -1,5 +1,8 @@
 # Pretraining data: band-end cropper (2026-11-03)
 
+Depends on research/corner_scale, copied here from branch claude/project-thread-mlnmr2 at b78c556
+(that branch stays the source of truth for it).
+
 `end_crop.py` finds full-width tilted bands (one tilt cluster spanning > 0.8 L, < 0.6 L tall) in
 packings and measures each end's waste per row, c_end = (half-slab waste - (L/2) sin phi) / H,
 the same per-row-per-end unit as research/corner_scale. It also crops each end into band

@@ -18,14 +18,17 @@ if __name__ == '__main__':
     src, n, fmax, OUT, procs, HOPS = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4], int(sys.argv[5]), int(sys.argv[6])
     TAG = os.path.basename(src).split('.')[0] + n
     os.makedirs(OUT, exist_ok=True)
-    P = load(src, n)
+    P = load(src, n) if src.endswith('.json') else np.load(src)[n]
     best = {}
     for g in fd.extract(0, P, max_wh=31):
-        if g.f < fmax and min(g.w, g.h) >= 4:
-            k = (min(g.w, g.h), max(g.w, g.h))
+        if float(os.environ.get('FMIN', -1)) <= g.f < fmax and g.d >= int(os.environ.get('MIND', 1)) and min(g.w, g.h) >= int(os.environ.get('MINWH', 4)):
+            k = (min(g.w, g.h), max(g.w, g.h)) if not os.environ.get('ALLD') else (g.w, g.h, g.d)
             if k not in best or g.d > best[k].d or (g.d == best[k].d and g.f < best[k].f):
                 best[k] = g
-    gs = sorted(best.values(), key=lambda g: g.w * g.h)
+    skip = set()
+    if os.environ.get('SKIPLOG'):
+        skip = {tuple(map(int, l.split()[:3])) for l in open(os.environ['SKIPLOG']) if ' f ' in l}
+    gs = sorted((g for g in best.values() if (g.w, g.h, g.d) not in skip), key=lambda g: g.w * g.h)
     print(len(gs), 'gadgets', flush=True)
     with Pool(procs) as pool:
         for r in pool.imap_unordered(job, gs):

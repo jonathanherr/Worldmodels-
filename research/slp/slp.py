@@ -40,35 +40,35 @@ def pairs_of(x, y, r=1.75):
 
 
 def _sep_rows(x, y, t, P, cut=0.3):
-    """For each pair pick the best separating face; return linear rows (f0, idx, coef)."""
+    """For each pair pick the best separating face; return linear rows (f0, idx, coef). Vectorised."""
+    if len(P) == 0:
+        return [], np.inf
     cx, cy, rx, ry = corners(x, y, t)
-    rows = []
-    minsep = np.inf
-    for i, j in P:
-        best = None
-        for a, b in ((i, j), (j, i)):
-            for k in range(4):
-                phi = t[a] + k * math.pi / 2
-                u = np.array([math.cos(phi), math.sin(phi)])
-                f = u[0] * (cx[b] - x[a]) + u[1] * (cy[b] - y[a]) - 0.5
-                m = f.min()
-                if best is None or m > best[0]:
-                    best = (m, a, b, phi, f)
-        m, a, b, phi, f = best
-        minsep = min(minsep, m)
-        if m > 0.45:  # far apart even after a full trust step
-            continue
-        cphi, sphi = math.cos(phi), math.sin(phi)
-        for q in range(4):
-            if f[q] > m + cut:
-                continue
-            # f = u.(cB + R v - cA) - .5
-            dcx, dcy = cx[b][q] - x[a], cy[b][q] - y[a]
-            g_ta = -sphi * dcx + cphi * dcy  # d/dtheta_a (rotating u)
-            g_tb = cphi * (-ry[b][q]) + sphi * rx[b][q]  # u . (J R v)
-            rows.append((f[q], (3 * a, 3 * a + 1, 3 * a + 2, 3 * b, 3 * b + 1, 3 * b + 2),
-                         (-cphi, -sphi, g_ta, cphi, sphi, g_tb)))
-    return rows, minsep
+    I, J = P[:, 0], P[:, 1]
+    # candidates: (a, b) = (I, J) or (J, I); k = 0..3 -> 8 axes
+    A = np.stack([I, J], 1)[:, :, None].repeat(4, 2).reshape(len(P), 8)
+    B = np.stack([J, I], 1)[:, :, None].repeat(4, 2).reshape(len(P), 8)
+    K = np.tile(np.arange(4), 2)[None, :]
+    phi = t[A] + K * (math.pi / 2)
+    c, s_ = np.cos(phi), np.sin(phi)
+    f = c[..., None] * (cx[B] - x[A][..., None]) + s_[..., None] * (cy[B] - y[A][..., None]) - 0.5  # (p, 8, 4)
+    m = f.min(2)
+    best = m.argmax(1)
+    r = np.arange(len(P))
+    mb = m[r, best]
+    minsep = float(mb.min())
+    a, b, ph = A[r, best], B[r, best], phi[r, best]
+    fb = f[r, best]  # (p, 4)
+    cphi, sphi = np.cos(ph), np.sin(ph)
+    sel = (mb <= 0.45)[:, None] & (fb <= mb[:, None] + cut)
+    pi, q = np.nonzero(sel)
+    a, b, cphi, sphi = a[pi], b[pi], cphi[pi], sphi[pi]
+    dcx, dcy = cx[b, q] - x[a], cy[b, q] - y[a]
+    g_ta = -sphi * dcx + cphi * dcy
+    g_tb = cphi * (-ry[b, q]) + sphi * rx[b, q]
+    idx = np.stack([3 * a, 3 * a + 1, 3 * a + 2, 3 * b, 3 * b + 1, 3 * b + 2], 1)
+    coef = np.stack([-cphi, -sphi, g_ta, cphi, sphi, g_tb], 1)
+    return (fb[pi, q], idx, coef), minsep
 
 
 def violation(x, y, t, P, L, ex=0.0, ey=0.0):
@@ -86,11 +86,11 @@ def lp_step(x, y, t, L, P, delta, dtheta, gap=0.0, ex=0.0, ey=0.0):
     data, ri, ci, rhs = [], [], [], []
     r = 0
     # pair rows: f0 + g.d >= gap  ->  -g.d <= f0 - gap
-    for f0, idx, coef in rows:
-        for c_, v_ in zip(idx, coef):
-            ri.append(r); ci.append(c_); data.append(-v_)
-        rhs.append(f0 - gap)
-        r += 1
+    if len(rows):
+        f0, idx, coef = rows
+        m = len(f0)
+        ri = list(np.repeat(np.arange(m), 6)); ci = list(idx.ravel()); data = list(-coef.ravel())
+        rhs = list(f0 - gap); r = m
     # walls, only corners near a wall
     near = 0.3
     for i in range(n):

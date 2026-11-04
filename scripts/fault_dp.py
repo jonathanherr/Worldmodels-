@@ -42,6 +42,7 @@ def main():
     ap.add_argument("--cert-min", type=int, default=1001, help="only certificates with n >= this")
     ap.add_argument("--cert-max", type=int, default=100000)
     ap.add_argument("--out", default="runs/fault")
+    ap.add_argument("--extra", nargs="*", default=[], help="extra donor packings (.npy of x, y, angle rows)")
     ap.add_argument("--rounds", type=int, default=4, help="extra gadgets per chain")
     ap.add_argument("--kmin", type=int, default=4)
     ap.add_argument("--workers", type=int, default=4)
@@ -61,6 +62,8 @@ def main():
             n = int(path.stem[1:])
             if a.cert_min <= n <= a.cert_max:
                 donors.append(fd.load_cert(path))
+    for path in a.extra:
+        donors.append(fd.normalize(np.load(path)))
     print(f"{len(donors)} donors loaded ({time.time() - t0:.0f}s)", flush=True)
 
     DONORS.update(enumerate(donors))

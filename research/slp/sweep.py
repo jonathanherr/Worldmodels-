@@ -1,11 +1,18 @@
 """SLP-polish every packing of a submission; certify with the official metric; save the winners."""
 import sys, time, json, numpy as np
 from multiprocessing import Pool
-sys.path.insert(0, '/home/claude/worldmodels-/research/slp'); sys.path.insert(0, '/home/claude/worldmodels-')
+import os
+HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from slp import slp, side
 from wm import kaggle_metric as km
 
-_Z = np.load(sys.argv[5] if len(sys.argv) > 5 else '/home/claude/work/cur.npz'); D = {k: _Z[k] for k in _Z.files}
+_src = sys.argv[5] if len(sys.argv) > 5 else '/home/claude/work/cur.npz'
+if _src.endswith('.csv'):
+    import pandas as pd
+    _df = pd.read_csv(_src)
+    D = {str(int(n)): g.sort_values('square_id')[['x', 'y', 'angle']].values for n, g in _df.groupby('n')}
+else:
+    _Z = np.load(_src); D = {k: _Z[k] for k in _Z.files}
 
 def certify(n, x, y, t):
     for dil in (1e-12, 1e-10, 1e-9, 1e-8, 1e-7, 3e-7, 1e-6, 1e-5):

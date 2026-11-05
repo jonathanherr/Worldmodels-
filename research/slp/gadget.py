@@ -1,6 +1,6 @@
 """Polish fault-DP gadgets as rectangles: minimise f for a w x h gadget holding w*h+d squares."""
 import sys, json, time, numpy as np
-sys.path.insert(0, '/home/claude/worldmodels-/research/slp'); sys.path.insert(0, '/home/claude/worldmodels-')
+import os as _os; _H = _os.path.dirname(_os.path.abspath(__file__)); sys.path.insert(0, _H); sys.path.insert(0, _os.path.dirname(_os.path.dirname(_H)))
 from slp import slp, side
 from wm import fault_dp as fd
 

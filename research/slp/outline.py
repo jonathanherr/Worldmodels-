@@ -82,7 +82,83 @@ def frame_fill(T, w, h, W, H, time_limit=0.5):
     return C[res.x > 0.5]
 
 
+def pair_overlap(A, B, tol=1e-9):
+    """Vectorised SAT: do squares A[k] and B[k] (rows x, y, t) overlap (interiors)?"""
+    ax, ay, _, _ = corners(A[:, 0], A[:, 1], A[:, 2]); bx, by, _, _ = corners(B[:, 0], B[:, 1], B[:, 2])
+    sep = np.zeros(len(A), bool)
+    for ang in (A[:, 2], A[:, 2] + math.pi / 2, B[:, 2], B[:, 2] + math.pi / 2):
+        c, s = np.cos(ang)[:, None], np.sin(ang)[:, None]
+        pa = ax * c + ay * s; pb = bx * c + by * s
+        sep |= (pa.max(1) <= pb.min(1) + tol) | (pb.max(1) <= pa.min(1) + tol)
+    return ~sep
+
+
+def general_fill(T, cand, W, H, time_limit=0.5):
+    """Max set of candidate squares (any angle) that fit the box and miss the block T and each other."""
+    C = cand[in_box(cand, W, H)] if len(cand) else cand
+    if len(C) == 0:
+        return C
+    if len(T):
+        d = np.hypot(C[:, None, 0] - T[None, :, 0], C[:, None, 1] - T[None, :, 1])
+        I, J = np.nonzero(d < 1.4143)
+        bad = np.zeros(len(C), bool)
+        if len(I):
+            np.logical_or.at(bad, I, pair_overlap(C[I], T[J]))
+        C = C[~bad]
+    m = len(C)
+    if m == 0:
+        return C
+    d = np.hypot(C[:, None, 0] - C[None, :, 0], C[:, None, 1] - C[None, :, 1])
+    I, J = np.nonzero(np.triu(d < 1.4143, 1))
+    if len(I):
+        ov = pair_overlap(C[I], C[J]); I, J = I[ov], J[ov]
+    cons = []
+    if len(I):
+        A = sp.csr_matrix((np.ones(2 * len(I)), (np.r_[np.arange(len(I)), np.arange(len(I))], np.r_[I, J])), shape=(len(I), m))
+        cons = [LinearConstraint(A, -np.inf, 1)]
+    res = milp(-np.ones(m), constraints=cons, integrality=np.ones(m), bounds=Bounds(0, 1), options=dict(time_limit=time_limit))
+    if res.x is None:
+        return C[:0]
+    return C[res.x > 0.5]
+
+
+def grid_cands(w, h, W, H):
+    cand = []
+    for gx in range(w + 1):
+        for gy in range(h + 1):
+            for x in (gx + 0.5, W - gx - 0.5):
+                for y in (gy + 0.5, H - gy - 0.5):
+                    cand.append((x, y, 0.0))
+    return np.unique(np.round(np.array(cand), 9), axis=0)
+
+
+EXTRA = None  # optional fixed candidate squares (seed's own non-block squares), set by seeded runs
+
+
+def evaluate_general(state, w, h, f0, extra):
+    theta, o, rows = state
+    W, H = w + f0, h + f0
+    T = tilted_squares(theta, o, rows)
+    if len(T) == 0 or not in_box(T, W, H).all():
+        return -1, None
+    cand = grid_cands(w, h, W, H)
+    if extra is not None and len(extra):
+        # seed squares keep their offset from the nearer box corner when f changes
+        ex = extra.copy()
+        ex[:, 0] = np.where(ex[:, 0] > (w + extra_f[0]) / 2, ex[:, 0] + (f0 - extra_f[0]), ex[:, 0])
+        ex[:, 1] = np.where(ex[:, 1] > (h + extra_f[0]) / 2, ex[:, 1] + (f0 - extra_f[0]), ex[:, 1])
+        cand = np.vstack([cand, ex])
+    A = general_fill(T, cand, W, H)
+    S = np.vstack([T, A])
+    return len(S), S
+
+
+extra_f = [0.0]
+
+
 def evaluate(state, w, h, f0):
+    if EXTRA is not None:
+        return evaluate_general(state, w, h, f0, EXTRA)
     theta, o, rows = state
     W, H = w + f0, h + f0
     T = tilted_squares(theta, o, rows)

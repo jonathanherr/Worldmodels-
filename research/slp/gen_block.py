@@ -65,13 +65,23 @@ def build(w, h, f0, theta, ox, oy, i0, i1, j0, j1, rng):
             cand.append((gx + 0.5, H - gy - 0.5, 0.0))
             cand.append((W - gx - 0.5, gy + 0.5, 0.0))
     cand = np.array(cand)
-    edge = np.minimum.reduce([cand[:, 0], W - cand[:, 0], cand[:, 1], H - cand[:, 1]])
-    order = np.argsort(edge + rng.uniform(0, 0.3, len(cand)))
-    A = list(P)
-    for k in order:
-        q = tuple(cand[k])
-        if inside(q, W, H) and not overlaps(np.array(A).reshape(-1, 3), q):
-            A.append(q)
+    cand = np.unique(np.round(cand, 9), axis=0)
+    ok = [k for k in range(len(cand)) if inside(tuple(cand[k]), W, H) and not overlaps(P, tuple(cand[k]))]
+    cand = cand[ok]
+    # exact max independent set of axis squares (MILP); two axis squares conflict if |dx|<1 and |dy|<1
+    from scipy.optimize import milp, LinearConstraint, Bounds
+    import scipy.sparse as sp
+    m = len(cand)
+    dx = np.abs(cand[:, None, 0] - cand[None, :, 0]); dy = np.abs(cand[:, None, 1] - cand[None, :, 1])
+    I, J = np.nonzero(np.triu((dx < 1 - 1e-9) & (dy < 1 - 1e-9), 1))
+    if len(I):
+        A_ = sp.csr_matrix((np.ones(2 * len(I)), (np.r_[np.arange(len(I)), np.arange(len(I))], np.r_[I, J])), shape=(len(I), m))
+        cons = [LinearConstraint(A_, -np.inf, 1)]
+    else:
+        cons = []
+    res = milp(-np.ones(m), constraints=cons, integrality=np.ones(m), bounds=Bounds(0, 1), options=dict(time_limit=20))
+    pick = cand[res.x > 0.5] if res.x is not None else cand[:0]
+    A = list(P) + list(pick)
     return np.array(A), len(P)
 
 def trial(args):

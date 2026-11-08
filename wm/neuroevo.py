@@ -84,9 +84,14 @@ def decode(genome: np.ndarray, n: int, shape: NetShape, base=None):
     w2 = genome[p:p + h * o].reshape(h, o); p += h * o
     b2 = genome[p:p + o]; p += o
     scale_gene = genome[p]
-    m = math.ceil(math.sqrt(n))
     feats = features(n, base)
     out = np.tanh(np.tanh(feats @ w1 + b1) @ w2 + b2)
+    return place(out, feats, n, scale_gene, base)
+
+
+def place(out, feats, n, scale_gene, base=None):
+    """Net outputs in [-1, 1] (offset x, offset y, tilt) -> (x, y, t radians, L0)."""
+    m = math.ceil(math.sqrt(n))
     if base is not None:
         bx, by, bt, bL = base
         L0 = bL * math.exp(0.05 * math.tanh(scale_gene))

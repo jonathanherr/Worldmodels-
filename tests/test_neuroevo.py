@@ -63,3 +63,49 @@ def test_store_keeps_only_certified_improvements(tmp_path):
     assert validate(xs, ys, ds)["valid"]
     rows = best_store.submission_rows(tmp_path, max_n=6)
     assert len(rows) == 21 and rows[10]["x"] == best_store.load(5, tmp_path)["x"][0]
+
+
+def test_neat_operators_keep_networks_acyclic_and_empty_genome_is_the_grid():
+    from wm import neat
+
+    rng = np.random.default_rng(0)
+    inn = neat.Innovations()
+    cfg = neat.NeatConfig(p_add_conn=0.9, p_add_node=0.6, p_act=0.5, p_toggle=0.3)
+    pop = [neat.initial_genome(rng, inn, cfg) for _ in range(8)]
+    feats = features(9)
+    for _ in range(30):
+        a, b = rng.choice(len(pop), 2, replace=False)
+        child = neat.mutate(neat.crossover(pop[a], pop[b], rng), rng, inn, cfg)
+        out = neat.activate(child, feats)  # raises on a cycle
+        assert out.shape == (9, 3) and np.all(np.abs(out) <= 1)
+        pop[int(rng.integers(len(pop)))] = child
+    assert any(k not in neat.OUTPUTS for g in pop for k in g.nodes)  # some hidden nodes were added
+    empty = neat.Genome({k: ["identity", 0.0] for k in neat.OUTPUTS})
+    x, y, t, L0 = neat.decode(empty, 9)
+    assert np.allclose(t, 0) and np.allclose(np.sort(np.unique(np.round(x / (L0 / 3) - 0.5, 6))), [0, 1, 2])
+
+
+def test_placer_features_and_a_corner_seeking_policy_fills_the_grid():
+    from wm import placer
+
+    # Overlap reported for a candidate matches the pair depth used by the optimizer.
+    f, worst = placer.candidate_features(np.array([1.0]), np.array([1.0]), np.array([0.0]),
+                                         np.array([1.7]), np.array([1.0]), np.array([0.0]), 4.0, 0.5,
+                                         *(np.zeros(0),) * 3)
+    assert np.isclose(worst[0], 0.3) and f.shape == (1, placer.N_FEAT)
+    # A hand-made policy that only likes spots near the corner (feature 2) packs 4 squares into 2 x 2.
+    g = np.zeros(placer.genome_size(1))
+    g[2] = -1.0  # w1[feature 2, unit 0]
+    g[placer.N_FEAT + 1] = 1.0  # w2
+    x, y, t, leftover = placer.place_all(g, 4, 2.0, hidden=1)
+    assert leftover == 0 and validate(x, y, np.rad2deg(t), tol=0.021)["valid"]
+
+
+def test_guide_follower_reproduces_the_guide_packing():
+    from wm import placer
+
+    x, y, d, _ = polish(*five_solution())
+    guide = (x, y, np.deg2rad(d), 2 + 1 / np.sqrt(2) + 1e-6)
+    px, py, pt, leftover = placer.place_all(placer.guide_follower(4), 5, guide[3], hidden=4, tol=0.0, guide=guide)
+    assert leftover == 0
+    assert np.allclose(np.sort(px), np.sort(x)) and np.allclose(np.sort(pt), np.sort(guide[2]))
